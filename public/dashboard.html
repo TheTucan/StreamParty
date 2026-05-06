@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dashboard — StreamParty</title>
+<link rel="stylesheet" href="/css/shared.css">
+<style>
+.dash-grid { display:grid; grid-template-columns:1fr 1fr; gap:20px; margin-bottom:36px; }
+@media(max-width:600px){ .dash-grid{ grid-template-columns:1fr; } }
+.stream-row { display:flex; align-items:center; gap:14px; padding:14px 16px; background:var(--s1); border:1px solid var(--border); border-radius:14px; margin-bottom:10px; transition:border-color .2s; }
+.stream-row:hover { border-color:var(--border2); }
+.stream-thumb { width:80px; height:52px; border-radius:8px; background:var(--s2); overflow:hidden; flex-shrink:0; }
+.stream-thumb img { width:100%; height:100%; object-fit:cover; }
+.stream-thumb-ph { width:100%; height:100%; display:flex; align-items:center; justify-content:center; font-size:22px; opacity:.3; }
+.stream-info { flex:1; min-width:0; }
+.stream-title-row { font-size:14px; font-weight:700; margin-bottom:4px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.stream-meta  { font-size:12px; color:var(--muted); display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+.stream-actions { display:flex; gap:6px; flex-shrink:0; }
+.perm-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+@media(max-width:500px){ .perm-grid{ grid-template-columns:1fr; } }
+.src-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-top:8px; }
+.src-tile { background:var(--s2); border:1px solid var(--border); border-radius:10px; padding:16px 10px; text-align:center; cursor:pointer; transition:all .2s; }
+.src-tile:hover { border-color:var(--border2); }
+.src-tile.on { border-color:var(--cyan); background:var(--cyan-d); }
+.src-ico { font-size:22px; margin-bottom:5px; }
+.src-nm  { font-size:11px; font-weight:600; color:var(--muted); }
+.src-tile.on .src-nm { color:var(--cyan); }
+</style>
+</head>
+<body>
+<nav class="nav" id="nav"></nav>
+
+<div class="page">
+  <div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:14px;margin-bottom:32px">
+    <div>
+      <div class="page-title" id="dash-title">Dashboard</div>
+      <div class="page-sub" style="margin-bottom:0">Manage your streams and create new rooms.</div>
+    </div>
+    <button class="btn btn-primary" onclick="openModal('modal-create')">+ New Stream</button>
+  </div>
+
+  <!-- Stats -->
+  <div class="stat-grid" id="stat-grid">
+    <div class="stat-card"><div class="stat-val" id="st-total">—</div><div class="stat-label">Total Streams</div></div>
+    <div class="stat-card"><div class="stat-val" id="st-live">—</div><div class="stat-label">Live Now</div></div>
+    <div class="stat-card"><div class="stat-val" id="st-peak">—</div><div class="stat-label">Peak Viewers (all-time)</div></div>
+    <div class="stat-card"><div class="stat-val" id="st-watchers">—</div><div class="stat-label">Watching Now</div></div>
+  </div>
+
+  <!-- My Streams -->
+  <div class="section-title">My Streams</div>
+  <div id="streams-list">
+    <div class="empty"><div class="empty-icon">📡</div><div class="empty-txt">Loading…</div></div>
+  </div>
+</div>
+
+<!-- CREATE STREAM MODAL -->
+<div class="modal-bg" id="modal-create">
+  <div class="modal">
+    <div class="modal-hd">
+      <div class="modal-title">New Stream</div>
+      <button class="modal-close" onclick="closeModal('modal-create')">✕</button>
+    </div>
+
+    <div class="form-field">
+      <label class="form-label">Stream Title *</label>
+      <input class="form-input" id="c-title" placeholder="e.g. Friday Night Movie" maxlength="128" oninput="chkCreate()">
+    </div>
+    <div class="form-field">
+      <label class="form-label">Description <span style="color:var(--dim);font-size:10px">(optional)</span></label>
+      <textarea class="form-input" id="c-desc" placeholder="What are you streaming?" maxlength="500" rows="2"></textarea>
+    </div>
+    <div class="form-field">
+      <label class="form-label">Source Type</label>
+      <div class="src-grid">
+        <div class="src-tile on" id="src-screen" onclick="setSrc('screen')"><div class="src-ico">🖥️</div><div class="src-nm">Screen</div></div>
+        <div class="src-tile"    id="src-file"   onclick="setSrc('file')"  ><div class="src-ico">🎞️</div><div class="src-nm">Video File</div></div>
+        <div class="src-tile"    id="src-cam"    onclick="setSrc('cam')"   ><div class="src-ico">📷</div><div class="src-nm">Webcam</div></div>
+      </div>
+    </div>
+
+    <div class="form-field">
+      <label class="form-label">Guest Permissions</label>
+      <div class="perm-grid">
+        <div class="toggle-row" onclick="togPerm('cam')">
+          <div class="toggle on" id="p-cam"></div>
+          <div class="toggle-info"><div class="toggle-label">📷 Camera</div><div class="toggle-desc">Guests can share cam</div></div>
+        </div>
+        <div class="toggle-row" onclick="togPerm('mic')">
+          <div class="toggle on" id="p-mic"></div>
+          <div class="toggle-info"><div class="toggle-label">🎙 Microphone</div><div class="toggle-desc">Guests can share mic</div></div>
+        </div>
+        <div class="toggle-row" onclick="togPerm('screen')">
+          <div class="toggle" id="p-screen"></div>
+          <div class="toggle-info"><div class="toggle-label">🖥️ Screen Share</div><div class="toggle-desc">Guests can share screen</div></div>
+        </div>
+        <div class="toggle-row" onclick="togPerm('chat')">
+          <div class="toggle on" id="p-chat"></div>
+          <div class="toggle-info"><div class="toggle-label">💬 Chat</div><div class="toggle-desc">Allow live chat</div></div>
+        </div>
+      </div>
+    </div>
+
+    <div style="display:flex;gap:14px;align-items:center;margin-bottom:20px">
+      <div class="toggle-row" style="flex:1;margin-bottom:0" onclick="togCreate('public')">
+        <div class="toggle on" id="p-public"></div>
+        <div class="toggle-info"><div class="toggle-label">🌐 Public Stream</div><div class="toggle-desc">Appears on the Browse page</div></div>
+      </div>
+    </div>
+
+    <div id="create-err" style="color:var(--red);font-size:13px;margin-bottom:12px;display:none"></div>
+    <button class="btn btn-primary btn-full" id="create-btn" onclick="doCreate()" disabled>Create Stream →</button>
+  </div>
+</div>
+
+<!-- EDIT STREAM MODAL -->
+<div class="modal-bg" id="modal-edit">
+  <div class="modal">
+    <div class="modal-hd">
+      <div class="modal-title">Edit Stream</div>
+      <button class="modal-close" onclick="closeModal('modal-edit')">✕</button>
+    </div>
+    <div class="form-field">
+      <label class="form-label">Title</label>
+      <input class="form-input" id="e-title" maxlength="128">
+    </div>
+    <div class="form-field">
+      <label class="form-label">Description</label>
+      <textarea class="form-input" id="e-desc" rows="2"></textarea>
+    </div>
+    <div class="toggle-row" onclick="togEdit('public')">
+      <div class="toggle" id="e-public"></div>
+      <div class="toggle-info"><div class="toggle-label">🌐 Public</div><div class="toggle-desc">Visible on Browse page</div></div>
+    </div>
+    <div style="height:10px"></div>
+    <div id="edit-err" style="color:var(--red);font-size:13px;margin-bottom:12px;display:none"></div>
+    <button class="btn btn-primary btn-full" id="edit-btn" onclick="doEdit()">Save Changes</button>
+  </div>
+</div>
+
+<script src="/js/shared.js"></script>
+<script>
+if (!requireLogin('/dashboard.html')) throw 0;
+
+const user = Auth.user;
+document.getElementById('dash-title').textContent = `Dashboard`;
+
+// Check for welcome param
+if (new URLSearchParams(location.search).get('welcome') === '1')
+  setTimeout(() => toast(`Welcome, ${user.display_name}! 🎉 Create your first stream below.`, 'success'), 400);
+
+renderNav('dashboard');
+
+let streams = [];
+let editCode = null;
+let curSrc   = 'screen';
+const perms  = { cam:true, mic:true, screen:false, chat:true, public:true };
+
+async function loadStreams() {
+  try {
+    streams = await API.get('/streams/mine');
+    renderStreams();
+    renderStats();
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+function renderStreams() {
+  const el = document.getElementById('streams-list');
+  if (!streams.length) {
+    el.innerHTML = `<div class="empty"><div class="empty-icon">📡</div><div class="empty-txt">No streams yet</div><div class="empty-sub">Create your first stream above</div></div>`;
+    return;
+  }
+  el.innerHTML = streams.map(s => `
+    <div class="stream-row">
+      <div class="stream-thumb">
+        ${s.thumbnail_url ? `<img src="${API_BASE}${s.thumbnail_url}" alt="">` : `<div class="stream-thumb-ph">📡</div>`}
+      </div>
+      <div class="stream-info">
+        <div class="stream-title-row">${escHtml(s.title)}</div>
+        <div class="stream-meta">
+          ${s.is_live ? `<span class="badge badge-live"><span class="live-dot"></span>LIVE</span>` : `<span class="badge badge-priv">Offline</span>`}
+          ${s.is_public ? `<span class="badge badge-public">Public</span>` : `<span class="badge badge-priv">Private</span>`}
+          <span style="font-family:var(--mono);font-size:10px;color:var(--dim);letter-spacing:.12em">${escHtml(s.room_code)}</span>
+          ${s.viewer_count > 0 ? `<span>👁 ${s.viewer_count}</span>` : ''}
+        </div>
+      </div>
+      <div class="stream-actions">
+        ${s.is_live
+          ? `<a href="/stream.html?room=${s.room_code}&host=1" class="btn btn-sm btn-primary">Open 🔴</a>`
+          : `<a href="/stream.html?room=${s.room_code}&host=1" class="btn btn-sm btn-secondary">Go Live</a>`}
+        <button class="btn btn-sm btn-secondary" onclick="openEdit('${s.room_code}')">Edit</button>
+        <button class="btn btn-sm btn-danger"    onclick="doDelete('${s.room_code}')">×</button>
+      </div>
+    </div>`).join('');
+}
+
+function renderStats() {
+  document.getElementById('st-total').textContent    = streams.length;
+  document.getElementById('st-live').textContent     = streams.filter(s=>s.is_live).length;
+  document.getElementById('st-peak').textContent     = Math.max(0,...streams.map(s=>s.peak_viewers||0));
+  document.getElementById('st-watchers').textContent = streams.reduce((n,s)=>n+(s.viewer_count||0),0);
+}
+
+// ── Create modal ──────────────────────────────────────────
+function setSrc(s) {
+  curSrc = s;
+  ['screen','file','cam'].forEach(x => document.getElementById('src-'+x).classList.toggle('on', x===s));
+}
+
+function togPerm(k) {
+  perms[k] = !perms[k];
+  document.getElementById('p-'+k).classList.toggle('on', perms[k]);
+}
+function togCreate(k) {
+  perms[k] = !perms[k];
+  document.getElementById('p-'+k).classList.toggle('on', perms[k]);
+}
+
+function chkCreate() {
+  document.getElementById('create-btn').disabled = !document.getElementById('c-title').value.trim();
+}
+
+async function doCreate() {
+  const btn = document.getElementById('create-btn');
+  const err = document.getElementById('create-err');
+  err.style.display = 'none';
+  setLoading(btn, true, 'Creating…');
+  try {
+    const s = await API.post('/streams', {
+      title:               document.getElementById('c-title').value.trim(),
+      description:         document.getElementById('c-desc').value.trim(),
+      source_type:         curSrc,
+      is_public:           perms.public,
+      allow_guest_cam:     perms.cam,
+      allow_guest_mic:     perms.mic,
+      allow_guest_screen:  perms.screen,
+      allow_chat:          perms.chat,
+    });
+    closeModal('modal-create');
+    toast('Stream created!', 'success');
+    await loadStreams();
+    // Open stream page for host
+    setTimeout(() => location.href = `/stream.html?room=${s.room_code}&host=1`, 400);
+  } catch (ex) {
+    err.textContent = ex.message; err.style.display = 'block';
+    setLoading(btn, false, 'Create Stream →');
+  }
+}
+
+// ── Edit modal ────────────────────────────────────────────
+let editPublic = false;
+function togEdit(k) { editPublic = !editPublic; document.getElementById('e-public').classList.toggle('on', editPublic); }
+
+function openEdit(code) {
+  const s = streams.find(x => x.room_code === code);
+  if (!s) return;
+  editCode = code;
+  editPublic = !!s.is_public;
+  document.getElementById('e-title').value = s.title;
+  document.getElementById('e-desc').value  = s.description || '';
+  document.getElementById('e-public').classList.toggle('on', editPublic);
+  document.getElementById('edit-err').style.display = 'none';
+  openModal('modal-edit');
+}
+
+async function doEdit() {
+  const btn = document.getElementById('edit-btn');
+  const err = document.getElementById('edit-err');
+  err.style.display = 'none';
+  setLoading(btn, true, 'Saving…');
+  try {
+    await API.patch(`/streams/${editCode}`, {
+      title:       document.getElementById('e-title').value.trim(),
+      description: document.getElementById('e-desc').value.trim(),
+      is_public:   editPublic,
+    });
+    closeModal('modal-edit');
+    toast('Saved!', 'success');
+    await loadStreams();
+  } catch (ex) {
+    err.textContent = ex.message; err.style.display = 'block';
+    setLoading(btn, false, 'Save Changes');
+  }
+}
+
+async function doDelete(code) {
+  if (!confirm('Delete this stream? This cannot be undone.')) return;
+  try {
+    await API.del(`/streams/${code}`);
+    toast('Stream deleted');
+    await loadStreams();
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+// Close modals on background click
+document.querySelectorAll('.modal-bg').forEach(bg =>
+  bg.addEventListener('click', e => { if (e.target === bg) bg.classList.remove('open'); }));
+
+loadStreams();
+</script>
+</body>
+</html>

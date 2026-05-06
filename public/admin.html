@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Admin Panel — StreamParty</title>
+<link rel="stylesheet" href="/css/shared.css">
+<style>
+.admin-tabs { display:flex; gap:4px; margin-bottom:28px; background:var(--s1); border:1px solid var(--border); border-radius:14px; padding:5px; width:fit-content; }
+.admin-tab { padding:8px 18px; border-radius:10px; font-size:13px; font-weight:700; cursor:pointer; color:var(--muted); transition:all .2s; border:none; background:none; font-family:var(--font); }
+.admin-tab.on { background:var(--s3); color:var(--text); }
+.panel { display:none; }
+.panel.on { display:block; }
+.tag { display:inline-block; padding:2px 8px; border-radius:6px; font-size:11px; font-weight:700; font-family:var(--mono); }
+.tag-admin  { background:rgba(199,125,255,.15); color:#c77dff; }
+.tag-user   { background:var(--s2); color:var(--dim); }
+.tag-banned { background:var(--red-d); color:var(--red); }
+.tag-live   { background:var(--red-d); color:var(--red); }
+.tag-ok     { background:var(--green-d); color:var(--green); }
+.search-sm  { max-width:320px; }
+.action-group { display:flex; gap:5px; }
+</style>
+</head>
+<body>
+<nav class="nav" id="nav"></nav>
+<div class="page">
+  <div class="page-title">Admin Panel</div>
+  <div class="page-sub" style="margin-bottom:24px">Manage users, streams, and review audit log.</div>
+
+  <!-- Stats -->
+  <div class="stat-grid" id="admin-stats">
+    <div class="stat-card"><div class="stat-val" id="as-users">—</div><div class="stat-label">Total Users</div></div>
+    <div class="stat-card"><div class="stat-val" id="as-streams">—</div><div class="stat-label">Total Streams</div></div>
+    <div class="stat-card"><div class="stat-val" id="as-live">—</div><div class="stat-label">Live Now</div></div>
+    <div class="stat-card"><div class="stat-val" id="as-watching">—</div><div class="stat-label">Watching Now</div></div>
+    <div class="stat-card"><div class="stat-val" id="as-banned">—</div><div class="stat-label">Banned Accounts</div></div>
+  </div>
+
+  <!-- Tabs -->
+  <div class="admin-tabs">
+    <button class="admin-tab on" onclick="showPanel('users')">👥 Users</button>
+    <button class="admin-tab"    onclick="showPanel('streams')">📡 Streams</button>
+    <button class="admin-tab"    onclick="showPanel('audit')">📋 Audit Log</button>
+  </div>
+
+  <!-- USERS PANEL -->
+  <div class="panel on" id="panel-users">
+    <div style="display:flex;gap:10px;margin-bottom:16px;align-items:center;flex-wrap:wrap">
+      <input class="search-input search-sm" id="user-search" placeholder="Search users…" oninput="debUsers()">
+      <button class="btn btn-sm btn-secondary" onclick="loadUsers()">↺ Refresh</button>
+    </div>
+    <div class="table-wrap">
+      <table class="table" id="user-table">
+        <thead><tr>
+          <th>User</th><th>Email</th><th>Role</th><th>Status</th><th>Joined</th><th>Actions</th>
+        </tr></thead>
+        <tbody id="user-tbody"></tbody>
+      </table>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:12px;align-items:center">
+      <button class="btn btn-sm btn-secondary" id="up-btn" onclick="usersPage--; loadUsers()" disabled>← Prev</button>
+      <span style="font-size:12px;color:var(--dim)" id="up-label">Page 1</span>
+      <button class="btn btn-sm btn-secondary" id="un-btn" onclick="usersPage++; loadUsers()">Next →</button>
+    </div>
+  </div>
+
+  <!-- STREAMS PANEL -->
+  <div class="panel" id="panel-streams">
+    <div style="margin-bottom:16px;display:flex;gap:8px">
+      <button class="btn btn-sm btn-secondary" onclick="loadStreams()">↺ Refresh</button>
+    </div>
+    <div class="table-wrap">
+      <table class="table">
+        <thead><tr>
+          <th>Title</th><th>Host</th><th>Room</th><th>Status</th><th>Viewers</th><th>Actions</th>
+        </tr></thead>
+        <tbody id="stream-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- AUDIT PANEL -->
+  <div class="panel" id="panel-audit">
+    <div style="margin-bottom:16px">
+      <button class="btn btn-sm btn-secondary" onclick="loadAudit()">↺ Refresh</button>
+    </div>
+    <div class="table-wrap">
+      <table class="table">
+        <thead><tr><th>Admin</th><th>Action</th><th>Target</th><th>Detail</th><th>When</th></tr></thead>
+        <tbody id="audit-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script src="/js/shared.js"></script>
+<script>
+if (!requireLogin('/admin.html')) throw 0;
+if (!Auth.isAdmin) { toast('Admin access required', 'error'); setTimeout(() => location.href='/', 1500); throw 0; }
+
+renderNav('admin');
+
+let usersPage = 1;
+let usersTimer;
+let currentPanel = 'users';
+
+function showPanel(p) {
+  currentPanel = p;
+  document.querySelectorAll('.panel').forEach(el => el.classList.remove('on'));
+  document.querySelectorAll('.admin-tab').forEach(el => el.classList.remove('on'));
+  document.getElementById('panel-' + p).classList.add('on');
+  document.querySelectorAll('.admin-tab').forEach((el, i) => {
+    if (['users','streams','audit'][i] === p) el.classList.add('on');
+  });
+  if (p === 'users')   loadUsers();
+  if (p === 'streams') loadStreams();
+  if (p === 'audit')   loadAudit();
+}
+
+// ── Stats ──────────────────────────────────────────────────
+async function loadStats() {
+  try {
+    const s = await API.get('/admin/stats');
+    document.getElementById('as-users').textContent    = s.users;
+    document.getElementById('as-streams').textContent  = s.streams;
+    document.getElementById('as-live').textContent     = s.live;
+    document.getElementById('as-watching').textContent = s.watching;
+    document.getElementById('as-banned').textContent   = s.banned;
+  } catch {}
+}
+
+// ── Users ──────────────────────────────────────────────────
+function debUsers() { clearTimeout(usersTimer); usersTimer = setTimeout(() => { usersPage=1; loadUsers(); }, 320); }
+
+async function loadUsers() {
+  const q = document.getElementById('user-search').value.trim();
+  try {
+    const rows = await API.get(`/admin/users?page=${usersPage}${q?'&q='+encodeURIComponent(q):''}`);
+    const tbody = document.getElementById('user-tbody');
+    tbody.innerHTML = rows.map(u => `
+      <tr>
+        <td>
+          <div style="display:flex;align-items:center;gap:8px">
+            <div class="avatar avatar-sm" style="background:${u.avatar_color};color:#080c12">${(u.display_name[0]||'?').toUpperCase()}</div>
+            <span style="font-weight:600;color:var(--text)">${escHtml(u.display_name)}</span>
+          </div>
+        </td>
+        <td>${escHtml(u.email)}</td>
+        <td><span class="tag tag-${u.role}">${u.role}</span></td>
+        <td><span class="tag ${u.is_banned?'tag-banned':'tag-ok'}">${u.is_banned?'Banned':'Active'}</span></td>
+        <td>${new Date(u.created_at).toLocaleDateString()}</td>
+        <td>
+          <div class="action-group">
+            ${u.is_banned
+              ? `<button class="btn btn-sm btn-secondary" onclick="setBan(${u.id},false)">Unban</button>`
+              : `<button class="btn btn-sm btn-danger"    onclick="setBan(${u.id},true)">Ban</button>`}
+            ${u.role==='user'
+              ? `<button class="btn btn-sm btn-secondary" onclick="setRole(${u.id},'admin')">Make Admin</button>`
+              : `<button class="btn btn-sm btn-secondary" onclick="setRole(${u.id},'user')">Revoke Admin</button>`}
+          </div>
+        </td>
+      </tr>`).join('') || '<tr><td colspan="6" style="text-align:center;color:var(--dim)">No users found</td></tr>';
+
+    document.getElementById('up-label').textContent = 'Page ' + usersPage;
+    document.getElementById('up-btn').disabled = usersPage <= 1;
+    document.getElementById('un-btn').disabled = rows.length < 25;
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+async function setBan(id, ban) {
+  if (!confirm(`${ban?'Ban':'Unban'} this user?`)) return;
+  try { await API.patch(`/admin/users/${id}`, { is_banned:ban }); toast(ban?'User banned':'User unbanned', 'success'); loadUsers(); loadStats(); }
+  catch (e) { toast(e.message, 'error'); }
+}
+
+async function setRole(id, role) {
+  if (!confirm(`Change role to "${role}"?`)) return;
+  try { await API.patch(`/admin/users/${id}`, { role }); toast('Role updated', 'success'); loadUsers(); }
+  catch (e) { toast(e.message, 'error'); }
+}
+
+// ── Streams ────────────────────────────────────────────────
+async function loadStreams() {
+  try {
+    const rows = await API.get('/admin/streams');
+    document.getElementById('stream-tbody').innerHTML = rows.map(s => `
+      <tr>
+        <td style="font-weight:600;color:var(--text)">${escHtml(s.title)}</td>
+        <td>${escHtml(s.host_name)}<br><small style="color:var(--dim)">${escHtml(s.host_email)}</small></td>
+        <td><span style="font-family:var(--mono);font-size:11px;letter-spacing:.12em">${escHtml(s.room_code)}</span></td>
+        <td><span class="tag ${s.is_live?'tag-live':'tag-user'}">${s.is_live?'LIVE':'Offline'}</span></td>
+        <td>${s.viewer_count || 0}</td>
+        <td>
+          <div class="action-group">
+            <a href="/stream.html?room=${escHtml(s.room_code)}" target="_blank" class="btn btn-sm btn-secondary">View</a>
+            ${s.is_live ? `<button class="btn btn-sm btn-danger" onclick="forceEnd(${s.id})">Force End</button>` : ''}
+          </div>
+        </td>
+      </tr>`).join('') || '<tr><td colspan="6" style="text-align:center;color:var(--dim)">No streams</td></tr>';
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+async function forceEnd(id) {
+  if (!confirm('Force-end this stream?')) return;
+  try { await API.post(`/admin/streams/${id}/end`); toast('Stream ended', 'success'); loadStreams(); loadStats(); }
+  catch (e) { toast(e.message, 'error'); }
+}
+
+// ── Audit log ──────────────────────────────────────────────
+async function loadAudit() {
+  try {
+    const rows = await API.get('/admin/audit');
+    document.getElementById('audit-tbody').innerHTML = rows.map(r => `
+      <tr>
+        <td style="color:var(--text)">${escHtml(r.admin_name)}</td>
+        <td><code style="font-size:11px;color:var(--cyan)">${escHtml(r.action)}</code></td>
+        <td style="font-size:11px">${r.target_type ? `${r.target_type} #${r.target_id}` : '—'}</td>
+        <td style="font-size:11px;max-width:200px;overflow:hidden;text-overflow:ellipsis">${escHtml(r.detail||'—')}</td>
+        <td style="font-size:11px;white-space:nowrap">${relativeTime(r.created_at)}</td>
+      </tr>`).join('') || '<tr><td colspan="5" style="text-align:center;color:var(--dim)">No audit entries</td></tr>';
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+// Boot
+loadStats();
+loadUsers();
+setInterval(loadStats, 30_000);
+</script>
+</body>
+</html>

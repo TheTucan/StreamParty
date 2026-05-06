@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Create Account — StreamParty</title>
+<link rel="stylesheet" href="/css/shared.css">
+<style>
+body { display:flex; flex-direction:column; }
+.auth-wrap { flex:1; display:flex; align-items:center; justify-content:center; padding:40px 20px; }
+.auth-box { width:100%; max-width:440px; }
+.auth-logo { text-align:center; margin-bottom:40px; }
+.auth-logo a { font-size:26px; font-weight:800; text-decoration:none; color:var(--text); }
+.auth-logo em { color:var(--cyan); font-style:normal; }
+.auth-card { background:var(--s1); border:1px solid var(--border); border-radius:20px; padding:32px; }
+.auth-title { font-size:26px; font-weight:800; letter-spacing:-.03em; margin-bottom:5px; }
+.auth-sub   { color:var(--muted); font-size:14px; margin-bottom:28px; font-weight:400; }
+.auth-foot  { text-align:center; margin-top:20px; font-size:13px; color:var(--muted); }
+.auth-foot a { color:var(--cyan); text-decoration:none; }
+.auth-err   { background:var(--red-d); border:1px solid rgba(255,59,59,.25); border-radius:10px; padding:11px 14px; color:var(--red); font-size:13px; margin-bottom:18px; display:none; }
+.auth-err.show { display:block; }
+.pw-strength { height:3px; border-radius:2px; background:var(--s3); margin-top:7px; overflow:hidden; }
+.pw-bar { height:100%; border-radius:2px; transition:all .3s; width:0; }
+</style>
+</head>
+<body>
+<div class="auth-wrap">
+  <div class="auth-box">
+    <div class="auth-logo"><a href="/index.html">Stream<em>Party</em></a></div>
+    <div class="auth-card">
+      <div class="auth-title">Create account</div>
+      <div class="auth-sub">Join StreamParty — it's free.</div>
+      <div class="auth-err" id="err"></div>
+      <form onsubmit="doRegister(event)">
+        <div class="form-field">
+          <label class="form-label">Display Name</label>
+          <input class="form-input" id="display_name" type="text" placeholder="Your name" required minlength="2" maxlength="64" autocomplete="nickname">
+        </div>
+        <div class="form-field">
+          <label class="form-label">Email</label>
+          <input class="form-input" id="email" type="email" placeholder="you@example.com" required autocomplete="email">
+        </div>
+        <div class="form-field">
+          <label class="form-label">Password</label>
+          <input class="form-input" id="password" type="password" placeholder="At least 8 characters" required minlength="8" autocomplete="new-password" oninput="checkPw()">
+          <div class="pw-strength"><div class="pw-bar" id="pw-bar"></div></div>
+        </div>
+        <div class="form-field">
+          <label class="form-label">Profile Color</label>
+          <div id="color-picker-wrap"></div>
+        </div>
+        <div style="height:4px"></div>
+        <!-- Live preview avatar -->
+        <div style="display:flex;align-items:center;gap:12px;padding:12px 14px;background:var(--s2);border-radius:12px;margin-bottom:20px">
+          <div class="avatar avatar-md" id="av-preview" style="background:#00d4ff;color:#080c12">?</div>
+          <div>
+            <div style="font-size:13px;font-weight:600" id="av-name">Your Name</div>
+            <div style="font-size:11px;color:var(--muted)">Preview</div>
+          </div>
+        </div>
+        <button class="btn btn-primary btn-full" type="submit" id="submit-btn">Create Account</button>
+      </form>
+    </div>
+    <div class="auth-foot">Already have an account? <a href="/login.html">Sign in →</a></div>
+  </div>
+</div>
+
+<script src="/js/shared.js"></script>
+<script>
+if (Auth.isLoggedIn) location.href = '/index.html';
+
+let selectedColor = COLORS[0];
+
+colorPicker('color-picker-wrap', c => {
+  selectedColor = c;
+  document.getElementById('av-preview').style.background = c;
+});
+
+document.getElementById('display_name').addEventListener('input', function() {
+  const av = document.getElementById('av-preview');
+  const nm = document.getElementById('av-name');
+  av.textContent = (this.value||'?')[0].toUpperCase();
+  nm.textContent = this.value || 'Your Name';
+});
+
+function checkPw() {
+  const pw = document.getElementById('password').value;
+  const bar = document.getElementById('pw-bar');
+  let score = 0;
+  if (pw.length >= 8)  score++;
+  if (pw.length >= 12) score++;
+  if (/[A-Z]/.test(pw)) score++;
+  if (/[0-9]/.test(pw)) score++;
+  if (/[^A-Za-z0-9]/.test(pw)) score++;
+  const colors = ['#ff3b3b','#ff6b6b','#ffd166','#00e5a0','#00d4ff'];
+  const widths  = ['20%','40%','60%','80%','100%'];
+  bar.style.width      = widths[score-1]  || '0';
+  bar.style.background = colors[score-1]  || 'transparent';
+}
+
+async function doRegister(e) {
+  e.preventDefault();
+  const btn = document.getElementById('submit-btn');
+  const err = document.getElementById('err');
+  err.classList.remove('show');
+  setLoading(btn, true, 'Creating account…');
+  try {
+    const data = await API.post('/auth/register', {
+      display_name: document.getElementById('display_name').value.trim(),
+      email:        document.getElementById('email').value.trim(),
+      password:     document.getElementById('password').value,
+      avatar_color: selectedColor,
+    });
+    Auth.save(data.token, data.user);
+    location.href = '/dashboard.html?welcome=1';
+  } catch (ex) {
+    err.textContent = ex.message;
+    err.classList.add('show');
+    setLoading(btn, false, 'Create Account');
+  }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>StreamParty — Deployment Guide</title>
+<style>
+  :root { --bg:#080c12; --s1:#0e1420; --s2:#141c2e; --border:rgba(255,255,255,0.07); --cyan:#00d4ff; --green:#00e5a0; --yellow:#ffd166; --red:#ff3b3b; --text:#e8edf5; --muted:#6b7a99; }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body { background:var(--bg); color:var(--text); font-family:system-ui,sans-serif; line-height:1.65; }
+  .wrap { max-width:860px; margin:0 auto; padding:48px 24px 96px; }
+  h1 { font-size:36px; font-weight:800; letter-spacing:-.03em; margin-bottom:6px; }
+  h1 em { color:var(--cyan); font-style:normal; }
+  .subtitle { color:var(--muted); font-size:16px; margin-bottom:48px; }
+  h2 { font-size:22px; font-weight:700; margin:44px 0 14px; padding-bottom:10px; border-bottom:1px solid var(--border); letter-spacing:-.02em; }
+  h3 { font-size:16px; font-weight:700; margin:24px 0 8px; color:var(--cyan); }
+  p  { color:var(--muted); margin-bottom:12px; }
+  ul, ol { color:var(--muted); padding-left:22px; margin-bottom:14px; }
+  li { margin-bottom:6px; }
+  pre { background:var(--s1); border:1px solid var(--border); border-radius:12px; padding:18px 20px; overflow-x:auto; font-size:13px; font-family:'Courier New',monospace; line-height:1.6; margin:14px 0; }
+  code { background:var(--s2); padding:2px 6px; border-radius:4px; font-size:13px; font-family:'Courier New',monospace; color:var(--cyan); }
+  .step { background:var(--s1); border:1px solid var(--border); border-radius:16px; padding:22px 24px; margin-bottom:16px; }
+  .step-num { display:inline-flex; align-items:center; justify-content:center; width:28px; height:28px; border-radius:50%; background:var(--cyan); color:#080c12; font-weight:800; font-size:13px; margin-right:10px; flex-shrink:0; }
+  .step-title { font-size:16px; font-weight:700; display:flex; align-items:center; margin-bottom:14px; }
+  .warn { background:rgba(255,209,102,.08); border:1px solid rgba(255,209,102,.2); border-radius:10px; padding:14px 16px; color:var(--yellow); font-size:13px; margin:14px 0; }
+  .good { background:rgba(0,229,160,.08); border:1px solid rgba(0,229,160,.2); border-radius:10px; padding:14px 16px; color:var(--green); font-size:13px; margin:14px 0; }
+  .toc { background:var(--s1); border:1px solid var(--border); border-radius:14px; padding:20px 24px; margin-bottom:40px; }
+  .toc ul { list-style:none; padding:0; }
+  .toc li { margin-bottom:6px; }
+  .toc a { color:var(--cyan); text-decoration:none; font-size:14px; }
+  .toc a:hover { text-decoration:underline; }
+  table { width:100%; border-collapse:collapse; margin:14px 0; }
+  th,td { padding:10px 14px; border-bottom:1px solid var(--border); font-size:13px; text-align:left; }
+  th { color:var(--muted); font-weight:600; }
+  td { color:var(--muted); }
+  td code { color:var(--cyan); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>Stream<em>Party</em></h1>
+<div class="subtitle">Full deployment guide — VPS + cPanel · watch.relay.media</div>
+
+<div class="toc">
+  <strong style="font-size:14px;display:block;margin-bottom:10px">Contents</strong>
+  <ul>
+    <li><a href="#arch">Architecture overview</a></li>
+    <li><a href="#vps">1. VPS setup (Node + MySQL + NGINX)</a></li>
+    <li><a href="#db">2. Database setup</a></li>
+    <li><a href="#app">3. Deploy Node app</a></li>
+    <li><a href="#nginx">4. Configure NGINX</a></li>
+    <li><a href="#ssl">5. SSL certificate</a></li>
+    <li><a href="#cpanel">6. cPanel — upload static files</a></li>
+    <li><a href="#env">7. Environment variables</a></li>
+    <li><a href="#start">8. Start the service</a></li>
+    <li><a href="#verify">9. Verify everything works</a></li>
+    <li><a href="#admin">10. First admin login</a></li>
+    <li><a href="#update">Updating the app</a></li>
+    <li><a href="#troubleshoot">Troubleshooting</a></li>
+  </ul>
+</div>
+
+<!-- ARCH -->
+<h2 id="arch">Architecture Overview</h2>
+<p>Two-server setup on one domain — NGINX routes requests to the right place:</p>
+<pre>Browser
+  ↓ HTTPS / WSS  (watch.relay.media)
+NGINX on VPS
+  ├── /api/*  →  Node.js (port 3001) — REST API
+  ├── /ws     →  Node.js (port 3001) — WebSocket signaling
+  └── /*      →  Static HTML/CSS/JS files (public/ directory)</pre>
+<p>Static files can be served either by NGINX on the VPS <strong>or</strong> uploaded directly to cPanel's <code>public_html</code>. Either works — NGINX only needs to handle <code>/api</code> and <code>/ws</code>.</p>
+
+<!-- VPS SETUP -->
+<h2 id="vps">1. VPS Setup</h2>
+<p>Tested on Ubuntu 22.04 LTS. Run as root or with sudo.</p>
+
+<div class="step">
+  <div class="step-title"><span class="step-num">1</span>Update system and install Node.js 20 LTS</div>
+<pre>apt update && apt upgrade -y
+curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+apt install -y nodejs nginx mysql-server git certbot python3-certbot-nginx
+node --version   # should print v20.x.x</pre>
+</div>
+
+<div class="step">
+  <div class="step-title"><span class="step-num">2</span>Create app user and directory</div>
+<pre>useradd -r -s /bin/false streamparty
+mkdir -p /var/www/streamparty/{server,public,uploads}
+chown -R www-data:www-data /var/www/streamparty</pre>
+</div>
+
+<!-- DB -->
+<h2 id="db">2. Database Setup</h2>
+<div class="step">
+  <div class="step-title"><span class="step-num">1</span>Secure MySQL and create database</div>
+<pre>mysql_secure_installation   # follow the prompts
+
+mysql -u root -p &lt;&lt;'SQL'
+CREATE DATABASE streamparty CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE USER 'streamparty'@'localhost' IDENTIFIED BY 'CHOOSE_A_STRONG_PASSWORD';
+GRANT ALL PRIVILEGES ON streamparty.* TO 'streamparty'@'localhost';
+FLUSH PRIVILEGES;
+SQL</pre>
+</div>
+<div class="step">
+  <div class="step-title"><span class="step-num">2</span>Import schema</div>
+<pre>mysql -u streamparty -p streamparty &lt; /var/www/streamparty/server/schema.sql</pre>
+</div>
+
+<!-- APP -->
+<h2 id="app">3. Deploy Node App</h2>
+<div class="step">
+  <div class="step-title"><span class="step-num">1</span>Copy server files to VPS</div>
+  <p>From your local machine (or git clone):</p>
+<pre># Option A — rsync from local
+rsync -avz ./server/ root@your-vps-ip:/var/www/streamparty/server/
+
+# Option B — git
+cd /var/www/streamparty
+git clone https://github.com/YOUR/REPO.git .
+# then copy server/ files to /var/www/streamparty/server/</pre>
+</div>
+<div class="step">
+  <div class="step-title"><span class="step-num">2</span>Install Node dependencies</div>
+<pre>cd /var/www/streamparty/server
+npm install --omit=dev
+chown -R www-data:www-data /var/www/streamparty</pre>
+</div>
+
+<!-- NGINX -->
+<h2 id="nginx">4. Configure NGINX</h2>
+<div class="step">
+  <div class="step-title"><span class="step-num">1</span>Install the config</div>
+<pre>cp /var/www/streamparty/nginx.conf /etc/nginx/sites-available/streamparty
+ln -s /etc/nginx/sites-available/streamparty /etc/nginx/sites-enabled/streamparty
+rm -f /etc/nginx/sites-enabled/default   # remove default site if present
+nginx -t   # test config</pre>
+</div>
+
+<div class="warn">⚠️ Don't start NGINX yet — get the SSL cert first (next step).</div>
+
+<!-- SSL -->
+<h2 id="ssl">5. SSL Certificate</h2>
+<div class="step">
+  <div class="step-title"><span class="step-num">1</span>Get free SSL via Let's Encrypt</div>
+<pre># Temporarily serve on port 80 for cert verification
+# Make sure DNS A record for watch.relay.media points to this VPS IP
+
+certbot --nginx -d watch.relay.media
+
+# Certbot auto-edits your nginx.conf with SSL paths
+# Auto-renewal is configured automatically</pre>
+</div>
+
+<div class="good">✓ Certbot handles renewal. Certs expire every 90 days but renew automatically.</div>
+
+<!-- CPANEL -->
+<h2 id="cpanel">6. cPanel — Upload Static Files</h2>
+<p>The HTML/CSS/JS files can be hosted directly on your cPanel shared hosting — this is optional if NGINX serves them from <code>/var/www/streamparty/public</code>.</p>
+
+<h3>Option A — cPanel hosts the static files</h3>
+<ol>
+  <li>In cPanel File Manager, navigate to <code>public_html</code> (or the domain's document root)</li>
+  <li>Upload the contents of the <code>public/</code> folder — all <code>.html</code> files, <code>css/</code>, and <code>js/</code> subdirectories</li>
+  <li>In the NGINX config (<code>nginx.conf</code>), comment out the <code>root</code> and <code>location /</code> block — NGINX only proxies <code>/api</code> and <code>/ws</code></li>
+  <li>Make sure the cPanel domain and the VPS domain are the <strong>same hostname</strong> (<code>watch.relay.media</code>) — DNS should point to the VPS IP so NGINX handles all traffic, then NGINX can either serve static files locally or reverse-proxy to cPanel's Apache port 8080</li>
+</ol>
+
+<h3>Option B — VPS serves everything (simpler)</h3>
+<ol>
+  <li>Copy <code>public/</code> to <code>/var/www/streamparty/public/</code> on the VPS</li>
+  <li>The <code>nginx.conf</code> already has <code>root /var/www/streamparty/public</code></li>
+  <li>No cPanel involvement needed for file serving</li>
+</ol>
+<div class="good">✓ Option B is simpler and recommended. Use cPanel only if you prefer managing files through its File Manager.</div>
+
+<!-- ENV -->
+<h2 id="env">7. Environment Variables</h2>
+<div class="step">
+  <div class="step-title"><span class="step-num">1</span>Create the env file</div>
+<pre>cp /var/www/streamparty/streamparty.env.example /etc/streamparty.env
+chmod 600 /etc/streamparty.env
+nano /etc/streamparty.env</pre>
+</div>
+
+<p>Required values to change:</p>
+<table>
+  <tr><th>Variable</th><th>Value</th></tr>
+  <tr><td><code>DB_PASS</code></td><td>The MySQL password you set in step 2</td></tr>
+  <tr><td><code>JWT_SECRET</code></td><td>Long random string — run: <code>node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"</code></td></tr>
+  <tr><td><code>ORIGIN</code></td><td><code>https://watch.relay.media</code></td></tr>
+  <tr><td><code>UPLOAD_DIR</code></td><td><code>/var/www/streamparty/uploads</code></td></tr>
+</table>
+
+<!-- START -->
+<h2 id="start">8. Start the Service</h2>
+<div class="step">
+  <div class="step-title"><span class="step-num">1</span>Install and start systemd service</div>
+<pre>cp /var/www/streamparty/streamparty.service /etc/systemd/system/
+systemctl daemon-reload
+systemctl enable streamparty
+systemctl start streamparty
+systemctl status streamparty   # should show "active (running)"</pre>
+</div>
+<div class="step">
+  <div class="step-title"><span class="step-num">2</span>Start NGINX</div>
+<pre>systemctl enable nginx
+systemctl start nginx
+nginx -s reload</pre>
+</div>
+
+<!-- VERIFY -->
+<h2 id="verify">9. Verify Everything Works</h2>
+<div class="step">
+  <div class="step-title"><span class="step-num">1</span>Check API health</div>
+<pre>curl https://watch.relay.media/health
+# Expected: {"status":"ok","rooms":0,"guests":0,"uptime":...}</pre>
+</div>
+<div class="step">
+  <div class="step-title"><span class="step-num">2</span>Check WebSocket</div>
+<pre># Install wscat: npm install -g wscat
+wscat -c wss://watch.relay.media/ws
+# Expected: {"type":"hello","peerId":"..."}</pre>
+</div>
+<div class="step">
+  <div class="step-title"><span class="step-num">3</span>Visit the site</div>
+  <p>Open <strong>https://watch.relay.media</strong> — you should see the browse page. Static files are served, API calls to <code>/api/*</code> work, and WebSocket connects on stream pages.</p>
+</div>
+
+<!-- ADMIN -->
+<h2 id="admin">10. First Admin Login</h2>
+<div class="warn">⚠️ Change the default admin password immediately after first login!</div>
+<table>
+  <tr><th>Field</th><th>Value</th></tr>
+  <tr><td>Email</td><td><code>admin@watch.relay.media</code></td></tr>
+  <tr><td>Password</td><td><code>Admin1234!</code></td></tr>
+</table>
+<ol>
+  <li>Log in at <code>https://watch.relay.media/login.html</code></li>
+  <li>Go to <strong>Profile → Change Password</strong></li>
+  <li>Set a strong password</li>
+  <li>The Admin Panel is at <code>/admin.html</code></li>
+</ol>
+
+<!-- UPDATE -->
+<h2 id="update">Updating the App</h2>
+<pre># Pull new code
+cd /var/www/streamparty/server
+# (copy/rsync new files)
+
+# Install any new dependencies
+npm install --omit=dev
+
+# Restart server (zero downtime with systemd)
+systemctl restart streamparty
+
+# For static file updates (public/):
+# Just copy the new files — no restart needed
+rsync -avz ./public/ /var/www/streamparty/public/</pre>
+
+<!-- TROUBLESHOOT -->
+<h2 id="troubleshoot">Troubleshooting</h2>
+
+<h3>Node app not starting</h3>
+<pre>journalctl -u streamparty -f    # live logs
+journalctl -u streamparty -n 100  # last 100 lines</pre>
+
+<h3>NGINX errors</h3>
+<pre>nginx -t                           # test config syntax
+tail -f /var/log/nginx/streamparty.error.log</pre>
+
+<h3>Database connection refused</h3>
+<pre>systemctl status mysql
+mysql -u streamparty -p -e "SELECT 1;"   # test connection</pre>
+
+<h3>WebSocket not connecting</h3>
+<ul>
+  <li>Check that <code>Upgrade</code> and <code>Connection</code> headers are set in the NGINX location block</li>
+  <li>Make sure firewall allows port 443: <code>ufw allow 443</code></li>
+  <li>Verify <code>proxy_read_timeout</code> is at least 3600s for the <code>/ws</code> location</li>
+</ul>
+
+<h3>Snapshots not saving</h3>
+<ul>
+  <li>Check <code>UPLOAD_DIR</code> is writable by <code>www-data</code>: <code>ls -la /var/www/streamparty/uploads</code></li>
+  <li>Fix: <code>chown www-data:www-data /var/www/streamparty/uploads</code></li>
+</ul>
+
+<h3>Screen share not working in Safari</h3>
+<p>Safari on iOS does not support <code>getDisplayMedia</code>. Cam and file source work fine on mobile. Screen share is a desktop-only feature.</p>
+
+<div style="margin-top:60px;padding-top:24px;border-top:1px solid var(--border);color:var(--muted);font-size:13px">
+  StreamParty — watch.relay.media · Built with Node.js, MySQL, WebRTC, WebSockets
+</div>
+</div>
+</body>
+</html>

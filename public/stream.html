@@ -1,0 +1,1020 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>StreamParty</title>
+<link rel="stylesheet" href="/css/shared.css">
+<style>
+/* ── Full viewport layout ── */
+html, body { height:100%; overflow:hidden; }
+body { display:flex; flex-direction:column; }
+
+/* ── Topbar ── */
+.topbar {
+  height:52px; background:var(--s1); border-bottom:1px solid var(--border);
+  display:flex; align-items:center; padding:0 14px; gap:10px; flex-shrink:0; z-index:50;
+}
+.topbar-brand { font-size:15px; font-weight:800; text-decoration:none; color:var(--text); }
+.topbar-brand em { color:var(--cyan); font-style:normal; }
+.topbar-code { font-family:var(--mono); font-size:11px; letter-spacing:.18em; color:var(--dim); background:var(--s2); padding:3px 8px; border-radius:6px; cursor:pointer; border:1px solid var(--border); }
+.topbar-code:hover { border-color:var(--cyan); color:var(--cyan); }
+.topbar-live { display:none; }
+.topbar-live.on { display:flex; align-items:center; gap:5px; font-family:var(--mono); font-size:10px; letter-spacing:.12em; color:var(--red); }
+.topbar-title { font-size:14px; font-weight:600; color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:200px; }
+.topbar-viewers { font-size:12px; color:var(--dim); margin-left:2px; }
+.topbar-space { flex:1; }
+.topbar-btn { background:var(--s2); border:1px solid var(--border); border-radius:8px; padding:6px 11px; color:var(--muted); font-family:var(--font); font-size:12px; font-weight:600; cursor:pointer; transition:all .2s; display:flex; align-items:center; gap:5px; }
+.topbar-btn:hover { color:var(--text); border-color:var(--border2); }
+
+/* ── Main content (video + sidebar) ── */
+.main-area { flex:1; display:flex; overflow:hidden; min-height:0; }
+
+/* ── Video area ── */
+.video-area { flex:1; position:relative; background:#000; display:flex; align-items:center; justify-content:center; min-width:0; overflow:hidden; }
+#main-video { width:100%; height:100%; object-fit:contain; display:block; }
+
+/* ── Overlays ── */
+.overlay { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; z-index:10; }
+
+/* Offline overlay */
+.overlay-offline { background:rgba(8,12,18,0.92); backdrop-filter:blur(12px); }
+.offline-ring { width:80px; height:80px; border-radius:50%; background:var(--s2); border:2px solid var(--border); display:flex; align-items:center; justify-content:center; font-size:36px; margin-bottom:18px; }
+.offline-title { font-size:20px; font-weight:700; margin-bottom:6px; }
+.offline-sub   { color:var(--muted); font-size:14px; font-weight:400; }
+
+/* BRB overlay */
+.overlay-brb { background:rgba(8,12,18,0.88); backdrop-filter:blur(16px); }
+.brb-orbit { width:120px; height:120px; position:relative; margin-bottom:22px; }
+.brb-orbit-ring { width:100%; height:100%; border-radius:50%; border:2px solid rgba(0,212,255,.2); border-top-color:var(--cyan); animation:spin 2.5s linear infinite; }
+.brb-avatar { position:absolute; inset:10px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:36px; }
+.brb-title { font-size:22px; font-weight:800; margin-bottom:8px; }
+.brb-msg   { color:var(--muted); font-size:15px; font-weight:400; }
+.brb-emoji { font-size:32px; position:absolute; animation:float 3s ease-in-out infinite; }
+@keyframes float { 0%,100%{transform:translateY(0) rotate(-5deg)} 50%{transform:translateY(-18px) rotate(5deg)} }
+@keyframes spin  { to{transform:rotate(360deg)} }
+
+/* Countdown overlay */
+.overlay-countdown { background:rgba(8,12,18,0.82); backdrop-filter:blur(10px); }
+.cd-ring { position:relative; width:160px; height:160px; margin-bottom:18px; }
+.cd-svg { transform:rotate(-90deg); position:absolute; inset:0; }
+.cd-bg   { fill:none; stroke:var(--s3); stroke-width:6; }
+.cd-arc  { fill:none; stroke:var(--cyan); stroke-width:6; stroke-linecap:round; transition:stroke-dashoffset .9s linear, stroke .3s; }
+.cd-num  { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font-size:56px; font-weight:800; }
+.cd-label { color:var(--muted); font-size:14px; }
+
+/* Kicked overlay */
+.overlay-kicked { background:rgba(8,12,18,0.95); backdrop-filter:blur(12px); }
+
+/* ── Cam strip ── */
+.cam-strip-bar {
+  height:44px; background:var(--s1); border-top:1px solid var(--border);
+  display:flex; align-items:center; padding:0 12px; gap:8px; flex-shrink:0;
+}
+.cam-strip-label { font-size:12px; font-weight:600; color:var(--dim); }
+.cam-strip-space { flex:1; }
+.cam-strip-wrap { overflow:hidden; max-height:0; transition:max-height .3s ease; background:#000; flex-shrink:0; }
+.cam-strip-wrap.open { max-height:110px; }
+.cam-strip { display:flex; gap:6px; padding:6px 8px; overflow-x:auto; height:100%; align-items:center; }
+.cam-tile {
+  width:160px; height:96px; border-radius:8px; background:var(--s2); border:2px solid var(--border);
+  position:relative; overflow:hidden; flex-shrink:0; transition:border-color .2s;
+}
+.cam-tile.speaking { border-color:var(--green); }
+.cam-tile video { width:100%; height:100%; object-fit:cover; display:block; }
+.cam-tile-name { position:absolute; bottom:4px; left:6px; font-size:10px; font-weight:600; color:#fff; text-shadow:0 1px 3px rgba(0,0,0,.8); }
+.cam-tile-actions { position:absolute; top:4px; right:4px; display:flex; gap:3px; opacity:0; transition:opacity .2s; }
+.cam-tile:hover .cam-tile-actions { opacity:1; }
+.cam-tile-btn { background:rgba(0,0,0,.65); border:none; border-radius:5px; color:#fff; font-size:11px; padding:2px 6px; cursor:pointer; font-family:var(--font); }
+.cam-tile-btn:hover { background:rgba(0,0,0,.9); }
+.cam-self-badge { position:absolute; top:4px; left:6px; font-size:9px; background:var(--cyan); color:#080c12; font-weight:700; padding:1px 5px; border-radius:4px; }
+.no-cams { color:var(--dim); font-size:12px; padding:0 12px; white-space:nowrap; }
+
+/* ── Host controls bar ── */
+.host-controls {
+  background:var(--s1); border-top:1px solid var(--border); padding:10px 14px;
+  display:none; align-items:center; gap:8px; flex-shrink:0; flex-wrap:wrap;
+}
+.host-controls.show { display:flex; }
+.ctrl-btn {
+  padding:8px 14px; border-radius:10px; border:1px solid var(--border);
+  background:var(--s2); color:var(--muted); font-family:var(--font); font-size:12px;
+  font-weight:700; cursor:pointer; transition:all .2s; display:flex; align-items:center; gap:6px;
+}
+.ctrl-btn:hover { color:var(--text); border-color:var(--border2); }
+.ctrl-btn.live  { background:var(--red-d); border-color:rgba(255,59,59,.35); color:var(--red); }
+.ctrl-btn.live:hover { background:rgba(255,59,59,.22); }
+.ctrl-btn.go-live { background:var(--cyan); border-color:var(--cyan); color:#080c12; }
+.ctrl-btn.go-live:hover { box-shadow:0 4px 20px rgba(0,212,255,.35); }
+.ctrl-btn.brb-on  { background:rgba(255,209,102,.1); border-color:rgba(255,209,102,.3); color:var(--yellow); }
+.ctrl-space { flex:1; }
+
+/* ── Live permissions bar ── */
+.perms-bar {
+  background:var(--s1); border-top:1px solid var(--border); padding:8px 14px;
+  display:none; align-items:center; gap:6px; flex-shrink:0; flex-wrap:wrap;
+}
+.perms-bar.show { display:flex; }
+.perm-pill {
+  padding:5px 12px; border-radius:20px; border:1px solid var(--border);
+  background:var(--s2); color:var(--dim); font-size:11px; font-weight:700;
+  cursor:pointer; transition:all .2s; font-family:var(--font);
+}
+.perm-pill.on { background:var(--green-d); border-color:rgba(0,229,160,.3); color:var(--green); }
+.perm-label { font-family:var(--mono); font-size:10px; letter-spacing:.15em; color:var(--dim); text-transform:uppercase; margin-right:4px; }
+
+/* ── Chat sidebar ── */
+.sidebar {
+  width:280px; flex-shrink:0; background:var(--s1); border-left:1px solid var(--border);
+  display:flex; flex-direction:column; transition:width .25s ease; overflow:hidden;
+}
+.sidebar.closed { width:0; border-left:none; }
+.sidebar-tabs { display:flex; border-bottom:1px solid var(--border); flex-shrink:0; }
+.stab { flex:1; padding:12px; text-align:center; font-size:12px; font-weight:700; cursor:pointer; color:var(--muted); border-bottom:2px solid transparent; transition:all .2s; position:relative; }
+.stab.on { color:var(--cyan); border-bottom-color:var(--cyan); }
+.stab-badge { position:absolute; top:8px; right:16px; background:var(--red); color:#fff; font-size:9px; border-radius:10px; padding:1px 5px; min-width:16px; text-align:center; display:none; }
+.stab-badge.show { display:inline-block; }
+
+/* Viewers tab */
+.viewers-list { flex:1; overflow-y:auto; padding:10px; }
+.viewer-row { display:flex; align-items:center; gap:9px; padding:7px 8px; border-radius:9px; transition:background .15s; }
+.viewer-row:hover { background:var(--s2); }
+.viewer-name { font-size:13px; font-weight:600; flex:1; }
+.viewer-role { font-size:10px; color:var(--dim); }
+.viewer-actions { display:none; gap:4px; }
+.viewer-row:hover .viewer-actions { display:flex; }
+
+/* Chat tab */
+.chat-messages { flex:1; overflow-y:auto; padding:10px; display:flex; flex-direction:column; gap:6px; }
+.chat-msg { display:flex; gap:8px; }
+.chat-bubble { background:var(--s2); border-radius:0 10px 10px 10px; padding:7px 10px; max-width:100%; }
+.chat-name { font-size:11px; font-weight:700; color:var(--cyan); margin-bottom:2px; }
+.chat-name.host-name { color:var(--yellow); }
+.chat-text { font-size:13px; line-height:1.4; word-break:break-word; }
+.chat-time { font-size:10px; color:var(--dim); margin-top:3px; }
+.chat-input-area { padding:10px; border-top:1px solid var(--border); flex-shrink:0; }
+.chat-input { width:100%; background:var(--s2); border:1px solid var(--border); border-radius:10px; padding:9px 12px; color:var(--text); font-family:var(--font); font-size:13px; outline:none; resize:none; transition:border-color .2s; }
+.chat-input:focus { border-color:rgba(0,212,255,.3); }
+.chat-input:disabled { opacity:.4; cursor:not-allowed; }
+.chat-disabled-note { text-align:center; padding:10px; font-size:12px; color:var(--dim); }
+
+/* ── Modals (BRB, countdown, source) ── */
+.brb-presets { display:flex; gap:7px; flex-wrap:wrap; margin-bottom:14px; }
+.preset-btn { background:var(--s2); border:1px solid var(--border); border-radius:8px; padding:7px 12px; font-family:var(--font); font-size:13px; cursor:pointer; color:var(--muted); transition:all .2s; }
+.preset-btn:hover { border-color:var(--cyan); color:var(--text); }
+.cd-presets { display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin-bottom:14px; }
+.cd-preset { background:var(--s2); border:1px solid var(--border); border-radius:8px; padding:10px; text-align:center; cursor:pointer; font-size:13px; font-weight:700; transition:all .2s; }
+.cd-preset:hover, .cd-preset.on { border-color:var(--cyan); color:var(--cyan); background:var(--cyan-d); }
+
+@media(max-width:700px){
+  .sidebar { display:none; }
+  .topbar-title { max-width:100px; }
+}
+</style>
+</head>
+<body>
+
+<!-- ── TOPBAR ── -->
+<div class="topbar">
+  <a href="/index.html" class="topbar-brand">Stream<em>Party</em></a>
+  <div class="topbar-code" id="room-code" onclick="copyCode()" title="Click to copy invite link">——</div>
+  <div class="topbar-live" id="topbar-live"><span class="live-dot"></span>LIVE</div>
+  <div class="topbar-title" id="topbar-title">Connecting…</div>
+  <div class="topbar-viewers" id="topbar-viewers"></div>
+  <div class="topbar-space"></div>
+  <button class="topbar-btn" id="btn-invite" onclick="copyInvite()" title="Copy invite link">🔗 Invite</button>
+  <button class="topbar-btn" id="btn-chat-toggle" onclick="toggleSidebar()">💬 Chat</button>
+  <a href="/index.html" class="topbar-btn">← Leave</a>
+</div>
+
+<!-- ── MAIN AREA (video + sidebar) ── -->
+<div class="main-area">
+
+  <!-- Video + overlays -->
+  <div class="video-area" id="video-area">
+    <video id="main-video" autoplay playsinline></video>
+
+    <!-- Offline -->
+    <div class="overlay overlay-offline" id="ov-offline">
+      <div class="offline-ring">📡</div>
+      <div class="offline-title" id="ov-offline-title">Waiting for host…</div>
+      <div class="offline-sub"   id="ov-offline-sub">The stream will start soon</div>
+    </div>
+
+    <!-- BRB -->
+    <div class="overlay overlay-brb" id="ov-brb" style="display:none">
+      <div style="font-size:40px;margin-bottom:10px" id="brb-float-emoji">☕</div>
+      <div class="brb-orbit">
+        <div class="brb-orbit-ring"></div>
+        <div class="brb-avatar" id="brb-host-av" style="background:var(--s3)">?</div>
+      </div>
+      <div class="brb-title">Be Right Back</div>
+      <div class="brb-msg" id="brb-msg-txt">Back soon…</div>
+    </div>
+
+    <!-- Countdown -->
+    <div class="overlay overlay-countdown" id="ov-countdown" style="display:none">
+      <div class="cd-ring" id="cd-ring">
+        <svg class="cd-svg" viewBox="0 0 160 160"><circle class="cd-bg" cx="80" cy="80" r="68"/><circle class="cd-arc" id="cd-arc" cx="80" cy="80" r="68"/></svg>
+        <div class="cd-num" id="cd-num">5</div>
+      </div>
+      <div class="cd-label">Starting in…</div>
+    </div>
+
+    <!-- Kicked -->
+    <div class="overlay overlay-kicked" id="ov-kicked" style="display:none">
+      <div style="font-size:48px;margin-bottom:16px">🚫</div>
+      <div style="font-size:22px;font-weight:800;margin-bottom:8px">Removed from stream</div>
+      <div style="color:var(--muted);font-size:14px;margin-bottom:28px">The host has removed you from this room.</div>
+      <a href="/index.html" class="btn btn-primary">Back to Browse</a>
+    </div>
+  </div>
+
+  <!-- Chat sidebar -->
+  <div class="sidebar" id="sidebar">
+    <div class="sidebar-tabs">
+      <div class="stab on"  id="tab-viewers" onclick="switchTab('viewers')">Viewers <span id="viewer-count-badge" class="stab-badge"></span></div>
+      <div class="stab"     id="tab-chat"    onclick="switchTab('chat')">Chat <span id="chat-unread-badge" class="stab-badge"></span></div>
+    </div>
+
+    <!-- Viewers list -->
+    <div class="viewers-list" id="tab-viewers-body">
+      <div class="viewer-row" id="vr-host" style="display:none">
+        <div class="avatar avatar-sm" id="vr-host-av" style="background:var(--cyan);color:#080c12">H</div>
+        <div class="viewer-name" id="vr-host-name">Host</div>
+        <div class="viewer-role">🎙 Host</div>
+      </div>
+      <div id="guests-list"></div>
+    </div>
+
+    <!-- Chat list -->
+    <div class="chat-messages" id="chat-messages" style="display:none"></div>
+    <div class="chat-disabled-note" id="chat-disabled" style="display:none">Chat is disabled for this stream</div>
+    <div class="chat-input-area" id="chat-input-area" style="display:none">
+      <textarea class="chat-input" id="chat-input" rows="2" placeholder="Say something…" maxlength="500" onkeydown="chatKeydown(event)"></textarea>
+    </div>
+  </div>
+</div>
+
+<!-- ── CAM STRIP BAR ── -->
+<div class="cam-strip-bar" id="cam-strip-bar" style="display:none">
+  <span class="cam-strip-label">Cams</span>
+  <span id="cam-count-label" style="font-size:11px;color:var(--dim)"></span>
+  <div class="cam-strip-space"></div>
+  <button class="ctrl-btn" id="btn-share-cam" onclick="toggleMyCam()" style="display:none">📷 Share Cam</button>
+  <button class="ctrl-btn" onclick="toggleCamStrip()">⬆ Hide</button>
+</div>
+<div class="cam-strip-wrap open" id="cam-strip-wrap">
+  <div class="cam-strip" id="cam-strip">
+    <span class="no-cams" id="no-cams-msg">No cameras on yet</span>
+  </div>
+</div>
+
+<!-- ── HOST CONTROLS ── -->
+<div class="host-controls" id="host-controls">
+  <button class="ctrl-btn go-live" id="btn-golive" onclick="goLive()">🔴 Go Live</button>
+  <button class="ctrl-btn brb-on"  id="btn-brb"    onclick="openModal('modal-brb')" style="display:none">☕ BRB</button>
+  <button class="ctrl-btn"         id="btn-cdown"  onclick="openModal('modal-countdown')" style="display:none">⏱ Countdown</button>
+  <button class="ctrl-btn"         id="btn-source" onclick="openModal('modal-source')" style="display:none">📡 Change Source</button>
+  <div class="ctrl-space"></div>
+  <input type="range" id="vol-slider" min="0" max="1" step="0.02" value="1" oninput="setVol(this.value)" style="width:90px;accent-color:var(--cyan);cursor:pointer" title="Volume">
+  <button class="ctrl-btn live"    id="btn-end" onclick="endStream()" style="display:none">■ End Stream</button>
+</div>
+
+<!-- ── LIVE PERMISSIONS BAR ── -->
+<div class="perms-bar" id="perms-bar">
+  <span class="perm-label">Guests:</span>
+  <span class="perm-pill on" id="pp-cam"    onclick="togPerm('cam')">📷 Cam</span>
+  <span class="perm-pill on" id="pp-mic"    onclick="togPerm('mic')">🎙 Mic</span>
+  <span class="perm-pill"    id="pp-screen" onclick="togPerm('screen')">🖥️ Screen</span>
+  <span class="perm-pill on" id="pp-chat"   onclick="togPerm('chat')">💬 Chat</span>
+</div>
+
+<!-- ── BRB MODAL ── -->
+<div class="modal-bg" id="modal-brb">
+  <div class="modal">
+    <div class="modal-hd"><div class="modal-title">☕ BRB</div><button class="modal-close" onclick="closeModal('modal-brb')">✕</button></div>
+    <div class="brb-presets">
+      <button class="preset-btn" onclick="setBrb('Back in 5 min')">⏱ Back in 5</button>
+      <button class="preset-btn" onclick="setBrb('Bathroom break')">🚿 Bathroom</button>
+      <button class="preset-btn" onclick="setBrb('Getting a drink')">☕ Getting coffee</button>
+      <button class="preset-btn" onclick="setBrb('Technical issues')">🔧 Tech issues</button>
+      <button class="preset-btn" onclick="setBrb('Back soon!')">👋 Back soon</button>
+    </div>
+    <div class="form-field">
+      <label class="form-label">Custom message</label>
+      <input class="form-input" id="brb-custom" placeholder="Type a custom message…" maxlength="100">
+    </div>
+    <div style="display:flex;gap:10px">
+      <button class="btn btn-secondary" style="flex:1" onclick="endBrb()">Cancel BRB</button>
+      <button class="btn btn-primary"   style="flex:1" onclick="sendBrb()">Go BRB</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── COUNTDOWN MODAL ── -->
+<div class="modal-bg" id="modal-countdown">
+  <div class="modal">
+    <div class="modal-hd"><div class="modal-title">⏱ Countdown</div><button class="modal-close" onclick="closeModal('modal-countdown')">✕</button></div>
+    <div class="cd-presets" id="cd-presets">
+      <div class="cd-preset on" data-s="3"  onclick="selectCd(this)">3</div>
+      <div class="cd-preset"    data-s="5"  onclick="selectCd(this)">5</div>
+      <div class="cd-preset"    data-s="10" onclick="selectCd(this)">10</div>
+      <div class="cd-preset"    data-s="30" onclick="selectCd(this)">30</div>
+    </div>
+    <div class="form-field">
+      <label class="form-label">Or custom (seconds)</label>
+      <input class="form-input" id="cd-custom" type="number" min="3" max="60" placeholder="3–60">
+    </div>
+    <div style="display:flex;gap:10px">
+      <button class="btn btn-secondary" style="flex:1" onclick="cancelCountdown()">Cancel</button>
+      <button class="btn btn-primary"   style="flex:1" onclick="startCountdown()">Start</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── SOURCE MODAL ── -->
+<div class="modal-bg" id="modal-source">
+  <div class="modal">
+    <div class="modal-hd"><div class="modal-title">📡 Change Source</div><button class="modal-close" onclick="closeModal('modal-source')">✕</button></div>
+    <p style="color:var(--muted);font-size:14px;margin-bottom:20px">Select a new media source to stream.</p>
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:20px">
+      <div class="cd-preset" onclick="changeSource('screen')">🖥️<br><small>Screen</small></div>
+      <div class="cd-preset" onclick="changeSource('file')">🎞️<br><small>Video File</small></div>
+      <div class="cd-preset" onclick="changeSource('cam')">📷<br><small>Webcam</small></div>
+    </div>
+    <input type="file" id="file-input" accept="video/*" style="display:none" onchange="onFileChosen(this)">
+  </div>
+</div>
+
+<script src="/js/shared.js"></script>
+<script>
+'use strict';
+/* ══════════════════════════════════════════════════════════════
+   StreamParty — stream.html  (full host + guest logic)
+   ══════════════════════════════════════════════════════════════ */
+
+const params   = new URLSearchParams(location.search);
+const ROOM     = (params.get('room')||'').toUpperCase();
+const IS_HOST  = params.get('host') === '1';
+const ME       = Auth.user;
+
+if (!ROOM) { location.href = '/index.html'; throw 0; }
+
+// ── State ──────────────────────────────────────────────────
+let ws           = null;
+let myPeerId     = null;
+let hostPeerId   = null;
+let localStream  = null;  // host's main broadcast stream
+let myCamStream  = null;  // my personal cam (guest)
+let peerConns    = {};    // peerId → RTCPeerConnection (main stream)
+let camConns     = {};    // peerId → RTCPeerConnection (cam channel)
+let streamInfo   = null;
+let sidebarOpen  = true;
+let activeTab    = 'viewers';
+let chatUnread   = 0;
+let isMyCamOn    = false;
+let permissions  = { cam:true, mic:true, screen:false, chat:true };
+let viewers      = {};   // peerId → { name }
+let snapTimer    = null;
+let cdSeconds    = 3;
+let cdInterval   = null;
+let isBrb        = false;
+let chatRateTs   = [];
+let stripVisible = true;
+
+// ── Boot ───────────────────────────────────────────────────
+(async () => {
+  document.title = `Room ${ROOM} — StreamParty`;
+  document.getElementById('room-code').textContent = ROOM;
+
+  try {
+    streamInfo = await API.get(`/streams/${ROOM}`);
+    document.getElementById('topbar-title').textContent = streamInfo.title || ROOM;
+    if (streamInfo.is_live) {
+      document.getElementById('topbar-live').classList.add('on');
+      document.getElementById('ov-offline').style.display = 'none';
+    }
+    if (streamInfo.recent_chat?.length) {
+      streamInfo.recent_chat.forEach(m => appendChat(m.display_name, m.message, false, m.sent_at));
+    }
+  } catch (e) {
+    setOffline('Stream not found', 'Check the room code and try again.');
+    return;
+  }
+
+  updatePermUI(streamInfo);
+  connectWS();
+
+  if (IS_HOST && !ME) { location.href = '/login.html?next=' + encodeURIComponent(location.href); }
+  if (IS_HOST) {
+    document.getElementById('host-controls').classList.add('show');
+    document.getElementById('perms-bar').classList.add('show');
+    document.getElementById('cam-strip-bar').style.display = 'flex';
+    document.getElementById('btn-share-cam').style.display = 'none'; // host uses main stream
+    renderNav('');
+  } else {
+    document.getElementById('cam-strip-bar').style.display = 'flex';
+    if (permissions.cam) document.getElementById('btn-share-cam').style.display = '';
+  }
+})();
+
+// ── WebSocket ─────────────────────────────────────────────
+function connectWS() {
+  ws = new WebSocket(WS_URL);
+  ws.onopen  = onWsOpen;
+  ws.onclose = () => setTimeout(connectWS, 3000);
+  ws.onerror = () => {};
+  ws.onmessage = ({ data }) => { try { onMsg(JSON.parse(data)); } catch {} };
+}
+
+function wsSend(obj) { if (ws?.readyState === 1) ws.send(JSON.stringify(obj)); }
+
+function onWsOpen() {
+  if (IS_HOST) {
+    wsSend({ type:'host-open', roomCode:ROOM, name:ME?.display_name||'Host', userId:ME?.id });
+  } else {
+    wsSend({ type:'guest-join', roomCode:ROOM,
+      name: ME?.display_name || `Viewer${Math.floor(Math.random()*900)+100}`,
+      userId: ME?.id || null });
+  }
+}
+
+function onMsg(m) {
+  switch (m.type) {
+
+    case 'hello': myPeerId = m.peerId; break;
+
+    case 'room-ready':
+      // Host: room is registered, set up permissions UI
+      permissions = m.permissions || permissions;
+      updatePermUI(permissions);
+      break;
+
+    case 'room-joined':
+      myPeerId   = m.peerId;
+      hostPeerId = m.hostPeerId;
+      permissions = m.permissions || permissions;
+      updatePermUI(permissions);
+      if (m.roomState) applyRoomState(m.roomState);
+      updateViewerCount(m.guestCount);
+      // Request main stream offer from host (guest sends answer later)
+      break;
+
+    case 'guest-arrived':
+      if (IS_HOST) {
+        viewers[m.guestPeerId] = { name: m.guestName };
+        addViewerRow(m.guestPeerId, m.guestName, false);
+        updateViewerCount(m.guestCount);
+        // Send offer to new guest
+        sendOffer(m.guestPeerId);
+      }
+      break;
+
+    case 'guest-left':
+      delete viewers[m.guestPeerId];
+      removeViewerRow(m.guestPeerId);
+      updateViewerCount(m.guestCount);
+      removeCamTile(m.guestPeerId);
+      if (peerConns[m.guestPeerId]) { peerConns[m.guestPeerId].close(); delete peerConns[m.guestPeerId]; }
+      if (camConns[m.guestPeerId])  { camConns[m.guestPeerId].close();  delete camConns[m.guestPeerId];  }
+      break;
+
+    case 'viewer-count': updateViewerCount(m.count); break;
+
+    // ── Main stream WebRTC ──
+    case 'offer':
+      receiveOffer(m.offer, m.hostPeerId); break;
+    case 'answer':
+      if (peerConns[m.guestPeerId]) peerConns[m.guestPeerId].setRemoteDescription(m.answer).catch(()=>{});
+      break;
+    case 'ice':
+      const pc = peerConns[m.fromPeerId] || camConns[m.fromPeerId];
+      if (pc) pc.addIceCandidate(m.candidate).catch(()=>{});
+      break;
+
+    // ── Guest cam WebRTC ──
+    case 'cam-offer':
+      if (IS_HOST) receiveCamOffer(m.offer, m.fromPeerId, m.name); break;
+    case 'cam-answer':
+      if (camConns[m.fromPeerId]) camConns[m.fromPeerId].setRemoteDescription(m.answer).catch(()=>{});
+      break;
+    case 'cam-ice':
+      if (camConns[m.fromPeerId]) camConns[m.fromPeerId].addIceCandidate(m.candidate).catch(()=>{});
+      break;
+
+    // ── Room events ──
+    case 'stream-live':
+      document.getElementById('topbar-live').classList.add('on');
+      document.getElementById('ov-offline').style.display = 'none';
+      document.getElementById('ov-brb').style.display     = 'none';
+      if (IS_HOST) {
+        document.getElementById('btn-golive').style.display = 'none';
+        document.getElementById('btn-brb').style.display    = '';
+        document.getElementById('btn-cdown').style.display  = '';
+        document.getElementById('btn-source').style.display = '';
+        document.getElementById('btn-end').style.display    = '';
+      }
+      break;
+
+    case 'stream-ended':
+      setOffline('Stream ended', m.reason === 'admin' ? 'The stream was ended by a moderator.' : 'Thanks for watching!');
+      document.getElementById('topbar-live').classList.remove('on');
+      stopSnap();
+      break;
+
+    case 'host-disconnected':
+      setOffline('Host disconnected', 'Waiting for host to reconnect…');
+      document.getElementById('topbar-live').classList.remove('on');
+      break;
+
+    case 'brb-on':
+      document.getElementById('ov-brb').style.display = '';
+      document.getElementById('brb-msg-txt').textContent = m.message || 'Back soon…';
+      setBrbEmoji(m.message || '');
+      isBrb = true;
+      if (IS_HOST) document.getElementById('btn-brb').classList.add('brb-on');
+      break;
+
+    case 'brb-off':
+      document.getElementById('ov-brb').style.display = 'none';
+      isBrb = false;
+      if (IS_HOST) document.getElementById('btn-brb').classList.remove('brb-on');
+      break;
+
+    case 'countdown-start': startCdDisplay(m.seconds, m.startedAt); break;
+    case 'countdown-cancel': stopCdDisplay(); break;
+
+    case 'permissions-updated':
+      permissions = m.permissions;
+      updatePermUI(permissions);
+      break;
+
+    case 'chat':
+      appendChat(m.name, m.text, m.role === 'host', null, m.peerId === myPeerId);
+      if (activeTab !== 'chat') { chatUnread++; document.getElementById('chat-unread-badge').textContent = chatUnread; document.getElementById('chat-unread-badge').classList.add('show'); }
+      break;
+
+    case 'kicked':
+      document.getElementById('ov-kicked').style.display = 'flex';
+      ws.close();
+      break;
+
+    case 'host-muted':
+      if (myCamStream) myCamStream.getAudioTracks().forEach(t => t.enabled = !m.muted);
+      break;
+  }
+}
+
+// ── WebRTC helpers ─────────────────────────────────────────
+const ICE = { iceServers:[{ urls:'stun:stun.l.google.com:19302' }] };
+
+function makePc(peerId, isHost) {
+  const pc = new RTCPeerConnection(ICE);
+  pc.onicecandidate = ({ candidate }) => {
+    if (candidate) wsSend({ type:'ice', candidate, targetPeerId: isHost ? peerId : hostPeerId });
+  };
+  pc.ontrack = ({ streams }) => {
+    if (!isHost && streams[0]) {
+      document.getElementById('main-video').srcObject = streams[0];
+      document.getElementById('ov-offline').style.display = 'none';
+    }
+  };
+  peerConns[peerId] = pc;
+  return pc;
+}
+
+async function sendOffer(guestPeerId) {
+  if (!localStream) return;
+  const pc = makePc(guestPeerId, true);
+  localStream.getTracks().forEach(t => pc.addTrack(t, localStream));
+  const offer = await pc.createOffer();
+  await pc.setLocalDescription(offer);
+  wsSend({ type:'offer', offer:pc.localDescription, targetPeerId:guestPeerId });
+}
+
+async function receiveOffer(offer, fromPeerId) {
+  const pc = makePc(fromPeerId, false);
+  await pc.setRemoteDescription(offer);
+  const answer = await pc.createAnswer();
+  await pc.setLocalDescription(answer);
+  wsSend({ type:'answer', answer:pc.localDescription });
+}
+
+// Guest cam
+function makeCamPc(peerId) {
+  const pc = new RTCPeerConnection(ICE);
+  pc.onicecandidate = ({ candidate }) => {
+    if (candidate) wsSend({ type:'cam-ice', candidate, targetPeerId: peerId });
+  };
+  pc.ontrack = ({ streams }) => {
+    if (streams[0]) addCamTile(peerId, streams[0], viewers[peerId]?.name || 'Guest');
+  };
+  camConns[peerId] = pc;
+  return pc;
+}
+
+async function receiveCamOffer(offer, fromPeerId, name) {
+  viewers[fromPeerId] = viewers[fromPeerId] || { name };
+  const pc = makeCamPc(fromPeerId);
+  await pc.setRemoteDescription(offer);
+  const answer = await pc.createAnswer();
+  await pc.setLocalDescription(answer);
+  wsSend({ type:'cam-answer', answer:pc.localDescription, targetPeerId:fromPeerId });
+}
+
+// ── Host actions ───────────────────────────────────────────
+async function goLive() {
+  if (localStream) { wsSend({ type:'stream-live' }); onMsg({ type:'stream-live' }); return; }
+  // Need to pick source first
+  openModal('modal-source');
+}
+
+async function startCapture(type) {
+  try {
+    let stream;
+    if (type === 'screen') {
+      stream = await navigator.mediaDevices.getDisplayMedia({ video:{ frameRate:30 }, audio:true });
+    } else if (type === 'cam') {
+      stream = await navigator.mediaDevices.getUserMedia({ video:true, audio:true });
+    } else if (type === 'file') {
+      document.getElementById('file-input').click(); return;
+    }
+    setLocalStream(stream);
+  } catch (e) { toast('Could not access media: ' + e.message, 'error'); }
+}
+
+function setLocalStream(stream) {
+  localStream = stream;
+  document.getElementById('main-video').srcObject = stream;
+  document.getElementById('main-video').muted = true;
+  closeModal('modal-source');
+
+  // Re-send to all connected guests
+  Object.entries(peerConns).forEach(([pid, pc]) => {
+    pc.getSenders().forEach(s => pc.removeTrack(s));
+    stream.getTracks().forEach(t => pc.addTrack(t, stream));
+    pc.createOffer().then(o => pc.setLocalDescription(o)).then(() => {
+      wsSend({ type:'offer', offer:pc.localDescription, targetPeerId:pid });
+    });
+  });
+
+  wsSend({ type:'stream-live' }); onMsg({ type:'stream-live' });
+
+  // Snapshots every 30s
+  stopSnap();
+  snapTimer = setInterval(takeSnapshot, 30_000);
+  setTimeout(takeSnapshot, 3000);
+
+  // Monitor for track-ended (screen share stopped by browser)
+  stream.getVideoTracks()[0]?.addEventListener('ended', () => {
+    toast('Screen share ended. Pick a new source.', 'info');
+    localStream = null;
+  });
+}
+
+function endStream() {
+  if (!confirm('End the stream for everyone?')) return;
+  wsSend({ type:'stream-ended' });
+  onMsg({ type:'stream-ended' });
+  stopSnap();
+  API.patch(`/streams/${ROOM}`, { is_live: false }).catch(()=>{});
+  setTimeout(() => location.href = '/dashboard.html', 1200);
+}
+
+function setVol(v) { document.getElementById('main-video').volume = parseFloat(v); }
+
+// ── Source change ──────────────────────────────────────────
+function changeSource(type) { startCapture(type); }
+function onFileChosen(input) {
+  const file = input.files[0]; if (!file) return;
+  const stream = (document.getElementById('main-video').srcObject = undefined, void 0);
+  const video  = document.getElementById('main-video');
+  const url    = URL.createObjectURL(file);
+  video.src    = url; video.muted = true; video.play();
+  // Capture from <video> element
+  const ms = video.captureStream ? video.captureStream() : video.mozCaptureStream();
+  setLocalStream(ms);
+}
+
+// ── BRB ───────────────────────────────────────────────────
+function sendBrb() {
+  const msg = document.getElementById('brb-custom').value.trim() || 'Back soon!';
+  wsSend({ type:'brb-on', message:msg }); onMsg({ type:'brb-on', message:msg });
+  closeModal('modal-brb');
+}
+function setBrb(msg) { document.getElementById('brb-custom').value = msg; sendBrb(); }
+function endBrb()  { wsSend({ type:'brb-off' }); onMsg({ type:'brb-off' }); closeModal('modal-brb'); }
+
+const BRB_EMOJIS = { coffee:['☕','coffee','drink'], brb:['👋'], bathroom:['🚿','shower'], food:['🍕','eat','hungry','pizza'], tech:['🔧','technical'], sleep:['💤','sleep'] };
+function setBrbEmoji(msg) {
+  let emoji = '☕';
+  const lc  = msg.toLowerCase();
+  for (const [e, kws] of Object.entries(BRB_EMOJIS)) {
+    if (kws.some(k => lc.includes(k))) { emoji = kws[0].length===1 ? kws[0] : Object.keys(BRB_EMOJIS).find(k=>k===e)||'☕'; break; }
+  }
+  document.getElementById('brb-float-emoji').textContent = emoji;
+}
+function applyRoomState({ isLive, isBrb: brb, brbMsg, countdown, permissions: p }) {
+  if (isLive) { document.getElementById('topbar-live').classList.add('on'); document.getElementById('ov-offline').style.display = 'none'; }
+  if (brb)    { onMsg({ type:'brb-on',  message:brbMsg }); }
+  if (countdown) startCdDisplay(countdown.seconds, countdown.startedAt);
+  if (p) { permissions = p; updatePermUI(p); }
+}
+
+// ── Countdown ─────────────────────────────────────────────
+function selectCd(el) { cdSeconds = parseInt(el.dataset.s); document.querySelectorAll('.cd-preset').forEach(e=>e.classList.remove('on')); el.classList.add('on'); }
+function startCountdown() {
+  const custom = parseInt(document.getElementById('cd-custom').value);
+  const secs   = (custom >= 3 && custom <= 60) ? custom : cdSeconds;
+  wsSend({ type:'countdown-start', seconds:secs });
+  closeModal('modal-countdown');
+}
+function cancelCountdown() { wsSend({ type:'countdown-cancel' }); closeModal('modal-countdown'); }
+
+function startCdDisplay(secs, startedAt) {
+  const el   = document.getElementById('ov-countdown');
+  const arc  = document.getElementById('cd-arc');
+  const num  = document.getElementById('cd-num');
+  const r    = 68;
+  const circ = 2 * Math.PI * r;
+  arc.style.strokeDasharray  = circ;
+  el.style.display = '';
+
+  function tick() {
+    const elapsed = (Date.now() - startedAt) / 1000;
+    const rem     = Math.max(0, secs - elapsed);
+    num.textContent = Math.ceil(rem);
+    arc.style.strokeDashoffset = circ * (1 - rem / secs);
+    arc.style.stroke = rem > secs * 0.5 ? 'var(--cyan)' : rem > secs * 0.2 ? 'var(--yellow)' : 'var(--red)';
+    if (rem <= 0) { clearInterval(cdInterval); el.style.display = 'none'; }
+  }
+  clearInterval(cdInterval);
+  cdInterval = setInterval(tick, 100);
+  tick();
+}
+function stopCdDisplay() { clearInterval(cdInterval); document.getElementById('ov-countdown').style.display = 'none'; }
+
+// ── Cam strip ─────────────────────────────────────────────
+function toggleCamStrip() {
+  stripVisible = !stripVisible;
+  document.getElementById('cam-strip-wrap').classList.toggle('open', stripVisible);
+}
+
+function addCamTile(peerId, stream, name, isSelf) {
+  const strip  = document.getElementById('cam-strip');
+  const noMsg  = document.getElementById('no-cams-msg');
+  if (noMsg) noMsg.style.display = 'none';
+
+  let tile = document.getElementById('cam-' + peerId);
+  if (!tile) {
+    tile = document.createElement('div');
+    tile.className = 'cam-tile';
+    tile.id        = 'cam-' + peerId;
+    strip.appendChild(tile);
+  }
+
+  // Speaking detection (Web Audio API)
+  let speakTid;
+  try {
+    const ctx = new AudioContext();
+    const src = ctx.createMediaStreamSource(stream);
+    const an  = ctx.createAnalyser(); an.fftSize = 512;
+    src.connect(an);
+    const buf = new Uint8Array(an.frequencyBinCount);
+    function checkSpeak() {
+      an.getByteFrequencyData(buf);
+      const avg = buf.reduce((a,b)=>a+b,0)/buf.length;
+      tile.classList.toggle('speaking', avg > 18);
+    }
+    speakTid = setInterval(checkSpeak, 80);
+    tile._stopAudio = () => { clearInterval(speakTid); ctx.close(); };
+  } catch {}
+
+  const isHostViewer = IS_HOST;
+  const actions = isHostViewer
+    ? `<button class="cam-tile-btn" onclick="localMute('${peerId}')" title="Mute">🔇</button>
+       <button class="cam-tile-btn" onclick="hostKick('${peerId}')"  title="Kick">✕</button>`
+    : `<button class="cam-tile-btn" onclick="localMute('${peerId}')" title="Mute">🔇</button>`;
+
+  tile.innerHTML = `
+    ${isSelf ? `<div class="cam-self-badge">You</div>` : ''}
+    <div class="cam-tile-actions">${actions}</div>
+    <div class="cam-tile-name">${escHtml(name)}</div>`;
+
+  const v = document.createElement('video');
+  v.autoplay = true; v.playsInline = true; v.muted = !!isSelf;
+  v.srcObject = stream;
+  tile.insertBefore(v, tile.firstChild);
+
+  const cnt = strip.querySelectorAll('.cam-tile').length;
+  document.getElementById('cam-count-label').textContent = `(${cnt})`;
+}
+
+function removeCamTile(peerId) {
+  const t = document.getElementById('cam-' + peerId);
+  if (t) { if (t._stopAudio) t._stopAudio(); t.remove(); }
+  const strip = document.getElementById('cam-strip');
+  const cnt   = strip.querySelectorAll('.cam-tile').length;
+  document.getElementById('cam-count-label').textContent = cnt ? `(${cnt})` : '';
+  if (!cnt) document.getElementById('no-cams-msg').style.display = '';
+}
+
+let localMutedPeers = {};
+function localMute(peerId) {
+  const tile  = document.getElementById('cam-' + peerId); if (!tile) return;
+  const video = tile.querySelector('video'); if (!video) return;
+  localMutedPeers[peerId] = !localMutedPeers[peerId];
+  video.muted = !!localMutedPeers[peerId];
+  tile.querySelector('.cam-tile-btn').textContent = localMutedPeers[peerId] ? '🔊' : '🔇';
+}
+
+function hostKick(peerId) {
+  if (!IS_HOST) return;
+  wsSend({ type:'kick-guest', targetPeerId:peerId });
+  API.post(`/streams/${ROOM}/kick`, { peer_id:peerId }).catch(()=>{});
+  removeCamTile(peerId);
+  removeViewerRow(peerId);
+}
+
+// ── Guest cam share ────────────────────────────────────────
+async function toggleMyCam() {
+  if (isMyCamOn) {
+    isMyCamOn = false;
+    myCamStream?.getTracks().forEach(t=>t.stop());
+    myCamStream = null;
+    removeCamTile(myPeerId);
+    document.getElementById('btn-share-cam').textContent = '📷 Share Cam';
+    return;
+  }
+  try {
+    myCamStream = await navigator.mediaDevices.getUserMedia({ video:true, audio:!!permissions.mic });
+    isMyCamOn = true;
+    addCamTile(myPeerId, myCamStream, ME?.display_name||'Me', true);
+    document.getElementById('btn-share-cam').textContent = '🚫 Stop Cam';
+
+    // Offer cam stream to host
+    const pc = new RTCPeerConnection(ICE);
+    pc.onicecandidate = ({ candidate }) => { if (candidate) wsSend({ type:'cam-ice', candidate, targetPeerId:hostPeerId }); };
+    myCamStream.getTracks().forEach(t => pc.addTrack(t, myCamStream));
+    const offer = await pc.createOffer();
+    await pc.setLocalDescription(offer);
+    camConns[hostPeerId] = pc;
+    wsSend({ type:'cam-offer', offer:pc.localDescription });
+  } catch (e) { toast('Camera error: ' + e.message, 'error'); }
+}
+
+// ── Host live permissions ──────────────────────────────────
+function togPerm(key) {
+  if (!IS_HOST) return;
+  permissions[key] = !permissions[key];
+  updatePermUI(permissions);
+  wsSend({ type:'update-permissions', permissions });
+}
+
+function updatePermUI(p) {
+  permissions = p;
+  ['cam','mic','screen','chat'].forEach(k => {
+    document.getElementById('pp-'+k)?.classList.toggle('on', !!p[k]);
+  });
+  const chatInput = document.getElementById('chat-input');
+  const chatDisabled = document.getElementById('chat-disabled');
+  const chatArea = document.getElementById('chat-input-area');
+  if (p.chat) {
+    if (chatInput) chatInput.disabled = false;
+    if (chatDisabled) chatDisabled.style.display = 'none';
+    if (chatArea)    chatArea.style.display = '';
+  } else {
+    if (chatInput) chatInput.disabled = true;
+    if (chatDisabled && !IS_HOST) chatDisabled.style.display = '';
+    if (chatArea && !IS_HOST)     chatArea.style.display = 'none';
+  }
+  if (!IS_HOST) {
+    const btn = document.getElementById('btn-share-cam');
+    if (btn) btn.style.display = p.cam ? '' : 'none';
+  }
+}
+
+// ── Chat ───────────────────────────────────────────────────
+function chatKeydown(e) {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendChat(); }
+}
+function sendChat() {
+  const input = document.getElementById('chat-input');
+  const text  = input.value.trim(); if (!text) return;
+  // Client-side rate limit: 3 per 5s
+  const now = Date.now();
+  chatRateTs = chatRateTs.filter(t => now - t < 5000);
+  if (chatRateTs.length >= 3) { toast('Slow down a bit 😅', 'info'); return; }
+  chatRateTs.push(now);
+  input.value = '';
+  wsSend({ type:'chat', text });
+}
+function appendChat(name, text, isHost, ts, isMine) {
+  const el    = document.getElementById('chat-messages');
+  const div   = document.createElement('div');
+  div.className = 'chat-msg';
+  const time  = ts ? relativeTime(ts) : 'just now';
+  div.innerHTML = `<div class="chat-bubble">
+    <div class="chat-name ${isHost?'host-name':''}">${escHtml(name)}</div>
+    <div class="chat-text">${escHtml(text)}</div>
+    <div class="chat-time">${time}</div>
+  </div>`;
+  el.appendChild(div);
+  el.scrollTop = el.scrollHeight;
+}
+
+// ── Sidebar & tabs ─────────────────────────────────────────
+function toggleSidebar() {
+  sidebarOpen = !sidebarOpen;
+  document.getElementById('sidebar').classList.toggle('closed', !sidebarOpen);
+}
+function switchTab(tab) {
+  activeTab = tab;
+  document.getElementById('tab-viewers').classList.toggle('on', tab==='viewers');
+  document.getElementById('tab-chat').classList.toggle('on',    tab==='chat');
+  document.getElementById('tab-viewers-body').style.display  = tab==='viewers'?'':'none';
+  document.getElementById('chat-messages').style.display     = tab==='chat'?'':'none';
+  document.getElementById('chat-disabled').style.display     = (tab==='chat' && !permissions.chat && !IS_HOST)?'':'none';
+  document.getElementById('chat-input-area').style.display   = (tab==='chat' && (IS_HOST || permissions.chat))?'':'none';
+  if (tab==='chat') {
+    chatUnread = 0;
+    document.getElementById('chat-unread-badge').classList.remove('show');
+    document.getElementById('chat-messages').scrollTop = 9999;
+  }
+}
+// Show chat input area by default for tab
+document.getElementById('chat-input-area').style.display = '';
+
+// ── Viewer list ────────────────────────────────────────────
+function addViewerRow(peerId, name, isHost) {
+  const list = document.getElementById('guests-list');
+  const div  = document.createElement('div');
+  div.className = 'viewer-row'; div.id = 'vr-' + peerId;
+  div.innerHTML = `
+    <div class="avatar avatar-sm" style="background:${COLORS[Math.floor(Math.random()*COLORS.length)]};color:#080c12">${(name[0]||'?').toUpperCase()}</div>
+    <div class="viewer-name">${escHtml(name)}</div>
+    ${IS_HOST ? `<div class="viewer-actions">
+      <button class="btn btn-sm btn-secondary" onclick="hostKick('${peerId}')">Kick</button>
+    </div>` : ''}`;
+  list.appendChild(div);
+}
+function removeViewerRow(peerId) { document.getElementById('vr-'+peerId)?.remove(); }
+function updateViewerCount(n) {
+  document.getElementById('topbar-viewers').textContent = n > 0 ? `👁 ${n}` : '';
+  document.getElementById('viewer-count-badge').textContent = n;
+  document.getElementById('viewer-count-badge').classList.toggle('show', n > 0);
+}
+
+// ── Snapshot ───────────────────────────────────────────────
+function takeSnapshot() {
+  if (!IS_HOST || !localStream) return;
+  try {
+    const video = document.getElementById('main-video');
+    const canvas = document.createElement('canvas');
+    canvas.width = 640; canvas.height = 360;
+    canvas.getContext('2d').drawImage(video, 0, 0, 640, 360);
+    canvas.toBlob(blob => {
+      if (!blob) return;
+      const fd = new FormData(); fd.append('snap', blob, 'snap.jpg');
+      API.postForm(`/streams/${ROOM}/snapshot`, fd).catch(()=>{});
+    }, 'image/jpeg', 0.82);
+  } catch {}
+}
+function stopSnap() { clearInterval(snapTimer); snapTimer = null; }
+
+// ── Offline helper ─────────────────────────────────────────
+function setOffline(title, sub) {
+  document.getElementById('ov-offline').style.display = '';
+  document.getElementById('ov-offline-title').textContent = title;
+  document.getElementById('ov-offline-sub').textContent   = sub;
+  document.getElementById('ov-brb').style.display    = 'none';
+  document.getElementById('ov-countdown').style.display = 'none';
+}
+
+// ── Invite copy ────────────────────────────────────────────
+function copyCode() {
+  navigator.clipboard.writeText(ROOM).then(() => toast('Room code copied!', 'success'));
+}
+function copyInvite() {
+  const url = `https://watch.relay.media/stream.html?room=${ROOM}`;
+  navigator.clipboard.writeText(url).then(() => toast('Invite link copied!', 'success'));
+}
+
+// ── Close modals on bg click ───────────────────────────────
+document.querySelectorAll('.modal-bg').forEach(bg =>
+  bg.addEventListener('click', e => { if(e.target===bg) bg.classList.remove('open'); }));
+
+// ── Keyboard shortcuts ─────────────────────────────────────
+document.addEventListener('keydown', e => {
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+  if (e.key === 'c' || e.key === 'C') toggleSidebar();
+  if (e.key === 'm' || e.key === 'M') {
+    const vol = document.getElementById('vol-slider');
+    const v = parseFloat(vol.value) > 0 ? 0 : 1;
+    vol.value = v; setVol(v);
+  }
+});
+</script>
+</body>
+</html>

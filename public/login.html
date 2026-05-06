@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sign In — StreamParty</title>
+<link rel="stylesheet" href="/css/shared.css">
+<style>
+body { display:flex; flex-direction:column; }
+.auth-wrap { flex:1; display:flex; align-items:center; justify-content:center; padding:40px 20px; }
+.auth-box { width:100%; max-width:420px; }
+.auth-logo { text-align:center; margin-bottom:40px; }
+.auth-logo a { font-size:26px; font-weight:800; text-decoration:none; color:var(--text); }
+.auth-logo em { color:var(--cyan); font-style:normal; }
+.auth-card { background:var(--s1); border:1px solid var(--border); border-radius:20px; padding:32px; }
+.auth-title { font-size:26px; font-weight:800; letter-spacing:-.03em; margin-bottom:5px; }
+.auth-sub   { color:var(--muted); font-size:14px; margin-bottom:28px; font-weight:400; }
+.auth-foot  { text-align:center; margin-top:20px; font-size:13px; color:var(--muted); }
+.auth-foot a { color:var(--cyan); text-decoration:none; }
+.auth-err   { background:var(--red-d); border:1px solid rgba(255,59,59,.25); border-radius:10px; padding:11px 14px; color:var(--red); font-size:13px; margin-bottom:18px; display:none; }
+.auth-err.show { display:block; }
+</style>
+</head>
+<body>
+<div class="auth-wrap">
+  <div class="auth-box">
+    <div class="auth-logo"><a href="/index.html">Stream<em>Party</em></a></div>
+    <div class="auth-card">
+      <div class="auth-title">Welcome back</div>
+      <div class="auth-sub">Sign in to your account</div>
+      <div class="auth-err" id="err"></div>
+      <form onsubmit="doLogin(event)">
+        <div class="form-field">
+          <label class="form-label">Email</label>
+          <input class="form-input" id="email" type="email" placeholder="you@example.com" required autocomplete="email">
+        </div>
+        <div class="form-field">
+          <label class="form-label">Password</label>
+          <input class="form-input" id="password" type="password" placeholder="Your password" required autocomplete="current-password">
+        </div>
+        <button class="btn btn-primary btn-full" type="submit" id="submit-btn">Sign In</button>
+      </form>
+    </div>
+    <div class="auth-foot">Don't have an account? <a href="/register.html">Create one →</a></div>
+  </div>
+</div>
+
+<script src="/js/shared.js"></script>
+<script>
+// Already logged in?
+if (Auth.isLoggedIn) location.href = '/index.html';
+
+async function doLogin(e) {
+  e.preventDefault();
+  const btn = document.getElementById('submit-btn');
+  const err = document.getElementById('err');
+  err.classList.remove('show');
+  setLoading(btn, true, 'Signing in…');
+  try {
+    const data = await API.post('/auth/login', {
+      email:    document.getElementById('email').value.trim(),
+      password: document.getElementById('password').value,
+    });
+    Auth.save(data.token, data.user);
+    const next = new URLSearchParams(location.search).get('next');
+    location.href = next || '/index.html';
+  } catch (ex) {
+    err.textContent = ex.message;
+    err.classList.add('show');
+    setLoading(btn, false, 'Sign In');
+  }
+}
+</script>
+</body>
+</html>

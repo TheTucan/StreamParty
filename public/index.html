@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>StreamParty — Watch Live Streams</title>
+<meta name="description" content="Browse and watch live private streams. Host your own room in seconds.">
+<link rel="stylesheet" href="/css/shared.css">
+<style>
+.hero { padding:60px 0 48px; text-align:center; position:relative; }
+.hero::before { content:''; position:absolute; top:-80px; left:50%; transform:translateX(-50%); width:800px; height:500px; background:radial-gradient(ellipse at 50% 40%,rgba(0,212,255,0.06),transparent 65%); pointer-events:none; }
+.hero-title { font-size:clamp(36px,6vw,60px); font-weight:800; letter-spacing:-.04em; line-height:1.1; margin-bottom:14px; }
+.hero-title em { color:var(--cyan); font-style:normal; }
+.hero-sub { font-size:17px; color:var(--muted); font-weight:400; max-width:480px; margin:0 auto 36px; line-height:1.6; }
+.hero-btns { display:flex; gap:12px; justify-content:center; flex-wrap:wrap; }
+.stats-strip { display:flex; gap:0; border:1px solid var(--border); border-radius:16px; overflow:hidden; margin-bottom:48px; background:var(--s1); }
+.stat-item { flex:1; padding:18px 20px; text-align:center; border-right:1px solid var(--border); }
+.stat-item:last-child { border-right:none; }
+.stat-num { font-size:28px; font-weight:800; letter-spacing:-.03em; color:var(--cyan); }
+.stat-nm  { font-family:var(--mono); font-size:10px; letter-spacing:.2em; text-transform:uppercase; color:var(--muted); margin-top:3px; }
+</style>
+</head>
+<body>
+<nav class="nav" id="nav"></nav>
+
+<div class="page">
+
+  <!-- Hero (shown when no live streams or to logged-out users) -->
+  <div class="hero" id="hero" style="display:none">
+    <div class="hero-title">Watch live, together.<br>No setup. <em>Just stream.</em></div>
+    <div class="hero-sub">Host a private room in seconds — share a video file, screen, or webcam. Guests watch live with reactions and chat.</div>
+    <div class="hero-btns">
+      <a href="/register.html" class="btn btn-primary" style="font-size:16px;padding:14px 28px">Start Streaming →</a>
+      <a href="/login.html"    class="btn btn-secondary" style="font-size:16px;padding:14px 28px">Sign In</a>
+    </div>
+  </div>
+
+  <!-- Stats strip -->
+  <div class="stats-strip" id="stats-strip" style="display:none">
+    <div class="stat-item"><div class="stat-num" id="stat-live">0</div><div class="stat-nm">Live Now</div></div>
+    <div class="stat-item"><div class="stat-num" id="stat-watching">0</div><div class="stat-nm">Watching</div></div>
+    <div class="stat-item"><div class="stat-num" id="stat-total">0</div><div class="stat-nm">Streams Today</div></div>
+  </div>
+
+  <!-- Live streams -->
+  <div id="live-section">
+    <div class="search-bar">
+      <input class="search-input" id="q" placeholder="Search streams…" oninput="debSearch()">
+      <button class="filter-btn on" id="f-live" onclick="setFilter('live')">🔴 Live</button>
+      <button class="filter-btn"    id="f-all"  onclick="setFilter('all')">All</button>
+    </div>
+
+    <div class="section-title" id="live-label">Live Streams</div>
+    <div class="stream-grid" id="live-grid">
+      <div class="empty"><div class="empty-icon">📡</div><div class="empty-txt">Loading…</div></div>
+    </div>
+  </div>
+
+  <!-- Recently ended -->
+  <div id="recent-section" style="display:none">
+    <div class="divider"></div>
+    <div class="section-title">Recently Ended</div>
+    <div class="stream-grid" id="recent-grid"></div>
+  </div>
+
+</div>
+
+<script src="/js/shared.js"></script>
+<script>
+let filter = 'live';
+let searchTimer;
+
+renderNav('home');
+
+async function load() {
+  const q = document.getElementById('q').value.trim();
+  const url = '/streams?limit=24' + (q ? '&q=' + encodeURIComponent(q) : '');
+  try {
+    const data = await API.get(url);
+    renderLive(data.live || []);
+    renderRecent(data.recent || []);
+    updateStats(data.live || []);
+  } catch (e) {
+    document.getElementById('live-grid').innerHTML =
+      `<div class="empty"><div class="empty-icon">⚠️</div><div class="empty-txt">Could not load streams</div></div>`;
+  }
+}
+
+function renderLive(streams) {
+  const grid = document.getElementById('live-grid');
+  const label = document.getElementById('live-label');
+
+  if (!streams.length) {
+    label.textContent = 'Live Streams';
+    grid.innerHTML = `<div class="empty" style="grid-column:1/-1"><div class="empty-icon">📡</div><div class="empty-txt">No live streams right now</div><div class="empty-sub">Be the first — <a href="/dashboard.html" style="color:var(--cyan)">start one</a></div></div>`;
+
+    // Show hero to logged-out users
+    if (!Auth.isLoggedIn) document.getElementById('hero').style.display = 'block';
+    return;
+  }
+
+  document.getElementById('hero').style.display = 'none';
+  label.textContent = `Live Streams (${streams.length})`;
+  grid.innerHTML = streams.map(streamCardHtml).join('');
+}
+
+function renderRecent(streams) {
+  const sec  = document.getElementById('recent-section');
+  const grid = document.getElementById('recent-grid');
+  if (!streams.length) { sec.style.display = 'none'; return; }
+  sec.style.display = 'block';
+  grid.innerHTML = streams.map(streamCardHtml).join('');
+}
+
+function updateStats(live) {
+  const strip = document.getElementById('stats-strip');
+  const watching = live.reduce((n, s) => n + (s.viewer_count || 0), 0);
+  document.getElementById('stat-live').textContent     = live.length;
+  document.getElementById('stat-watching').textContent = watching;
+  // total streams today: just show live for now (could query DB)
+  document.getElementById('stat-total').textContent    = live.length;
+  if (live.length > 0) { strip.style.display = 'flex'; }
+}
+
+function setFilter(f) {
+  filter = f;
+  document.getElementById('f-live').classList.toggle('on', f === 'live');
+  document.getElementById('f-all').classList.toggle('on',  f === 'all');
+  load();
+}
+
+function debSearch() {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(load, 320);
+}
+
+load();
+setInterval(load, 30_000); // auto-refresh every 30s
+</script>
+</body>
+</html>

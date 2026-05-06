@@ -1,0 +1,35 @@
+# StreamParty — systemd service
+# Place at: /etc/systemd/system/streamparty.service
+# Enable:   sudo systemctl enable --now streamparty
+
+[Unit]
+Description=StreamParty API & Signaling Server
+After=network.target mysql.service
+Wants=mysql.service
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/var/www/streamparty/server
+ExecStart=/usr/bin/node index.js
+Restart=on-failure
+RestartSec=5
+StandardOutput=syslog
+StandardError=syslog
+SyslogIdentifier=streamparty
+
+# ── Environment ─────────────────────────────────────────────
+# Create this file:  /etc/streamparty.env
+# Do NOT commit it to git.
+EnvironmentFile=/etc/streamparty.env
+
+# ── Security ────────────────────────────────────────────────
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/www/streamparty/uploads
+
+[Install]
+WantedBy=multi-user.target

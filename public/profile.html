@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Profile — StreamParty</title>
+<link rel="stylesheet" href="/css/shared.css">
+<style>
+.profile-card { background:var(--s1); border:1px solid var(--border); border-radius:20px; padding:28px; margin-bottom:20px; }
+.profile-header { display:flex; align-items:center; gap:18px; margin-bottom:28px; }
+.profile-avatar-wrap { position:relative; }
+.profile-av-hint { font-size:11px; color:var(--dim); margin-top:4px; text-align:center; }
+.section-sep { height:1px; background:var(--border); margin:24px 0; }
+</style>
+</head>
+<body>
+<nav class="nav" id="nav"></nav>
+
+<div class="page-md">
+  <div class="page-title">Profile Settings</div>
+  <div class="page-sub">Update your display name, avatar and password.</div>
+
+  <!-- Profile info -->
+  <div class="profile-card">
+    <div class="profile-header">
+      <div class="profile-avatar-wrap">
+        <div class="avatar avatar-lg" id="av-big" style="background:var(--cyan);color:#080c12">?</div>
+        <div class="profile-av-hint">Pick color below</div>
+      </div>
+      <div>
+        <div style="font-size:20px;font-weight:800" id="profile-name">—</div>
+        <div style="font-size:13px;color:var(--muted);margin-top:3px" id="profile-email">—</div>
+        <div style="font-size:11px;color:var(--dim);margin-top:4px;font-family:var(--mono)" id="profile-since">—</div>
+      </div>
+    </div>
+
+    <div class="form-field">
+      <label class="form-label">Display Name</label>
+      <input class="form-input" id="display_name" maxlength="64" placeholder="Your name">
+    </div>
+
+    <div class="form-field">
+      <label class="form-label">Profile Color</label>
+      <div id="color-picker-wrap"></div>
+    </div>
+
+    <div id="profile-err" style="color:var(--red);font-size:13px;margin-bottom:10px;display:none"></div>
+    <div id="profile-ok"  style="color:var(--green);font-size:13px;margin-bottom:10px;display:none">✓ Saved!</div>
+
+    <button class="btn btn-primary" id="save-btn" onclick="saveProfile()">Save Changes</button>
+  </div>
+
+  <!-- Password change -->
+  <div class="profile-card">
+    <div class="section-title" style="margin-bottom:18px">Change Password</div>
+    <div class="form-field">
+      <label class="form-label">Current Password</label>
+      <input class="form-input" type="password" id="pw-current" autocomplete="current-password">
+    </div>
+    <div class="form-field">
+      <label class="form-label">New Password</label>
+      <input class="form-input" type="password" id="pw-new" autocomplete="new-password" minlength="8">
+    </div>
+    <div class="form-field">
+      <label class="form-label">Confirm New Password</label>
+      <input class="form-input" type="password" id="pw-confirm" autocomplete="new-password" minlength="8">
+    </div>
+    <div id="pw-err" style="color:var(--red);font-size:13px;margin-bottom:10px;display:none"></div>
+    <div id="pw-ok"  style="color:var(--green);font-size:13px;margin-bottom:10px;display:none">✓ Password updated</div>
+    <button class="btn btn-primary" id="pw-btn" onclick="changePw()">Update Password</button>
+  </div>
+
+  <div style="text-align:center;margin-top:10px">
+    <button class="btn btn-danger" onclick="doLogout()">Sign Out of All Devices</button>
+  </div>
+</div>
+
+<script src="/js/shared.js"></script>
+<script>
+if (!requireLogin('/profile.html')) throw 0;
+renderNav('');
+
+let selectedColor = Auth.user?.avatar_color || COLORS[0];
+
+async function loadProfile() {
+  try {
+    const u = await API.get('/users/me');
+    document.getElementById('display_name').value   = u.display_name;
+    document.getElementById('profile-name').textContent  = u.display_name;
+    document.getElementById('profile-email').textContent = u.email;
+    document.getElementById('profile-since').textContent = 'Joined ' + new Date(u.created_at).toLocaleDateString();
+    selectedColor = u.avatar_color;
+    document.getElementById('av-big').style.background = u.avatar_color;
+    document.getElementById('av-big').textContent = u.display_name[0].toUpperCase();
+    colorPicker('color-picker-wrap', c => {
+      selectedColor = c;
+      document.getElementById('av-big').style.background = c;
+      document.getElementById('av-big').textContent = document.getElementById('display_name').value[0]?.toUpperCase() || '?';
+    });
+    // Re-init with current color
+    document.querySelectorAll('#color-picker-wrap .color-swatch').forEach(s => {
+      s.classList.toggle('on', s.dataset.color === selectedColor);
+    });
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+document.getElementById('display_name').addEventListener('input', function() {
+  document.getElementById('av-big').textContent = (this.value||'?')[0].toUpperCase();
+});
+
+async function saveProfile() {
+  const btn = document.getElementById('save-btn');
+  const err = document.getElementById('profile-err');
+  const ok  = document.getElementById('profile-ok');
+  err.style.display = 'none'; ok.style.display = 'none';
+  setLoading(btn, true, 'Saving…');
+  try {
+    const u = await API.patch('/users/me', {
+      display_name: document.getElementById('display_name').value.trim(),
+      avatar_color: selectedColor,
+    });
+    // Update local auth store
+    const stored = Auth.user;
+    Auth.save(Auth.token, { ...stored, display_name: u.display_name, avatar_color: u.avatar_color });
+    ok.style.display = 'block';
+    renderNav('');
+    document.getElementById('profile-name').textContent = u.display_name;
+    document.getElementById('av-big').style.background  = u.avatar_color;
+  } catch (ex) {
+    err.textContent = ex.message; err.style.display = 'block';
+  }
+  setLoading(btn, false, 'Save Changes');
+}
+
+async function changePw() {
+  const btn = document.getElementById('pw-btn');
+  const err = document.getElementById('pw-err');
+  const ok  = document.getElementById('pw-ok');
+  err.style.display = 'none'; ok.style.display = 'none';
+
+  const cur  = document.getElementById('pw-current').value;
+  const nw   = document.getElementById('pw-new').value;
+  const conf = document.getElementById('pw-confirm').value;
+
+  if (!cur || !nw) { err.textContent = 'Please fill in all fields'; err.style.display = 'block'; return; }
+  if (nw.length < 8) { err.textContent = 'New password must be at least 8 characters'; err.style.display = 'block'; return; }
+  if (nw !== conf) { err.textContent = 'Passwords do not match'; err.style.display = 'block'; return; }
+
+  setLoading(btn, true, 'Updating…');
+  try {
+    await API.post('/users/me/password', { current_password:cur, new_password:nw });
+    ok.style.display = 'block';
+    document.getElementById('pw-current').value = '';
+    document.getElementById('pw-new').value     = '';
+    document.getElementById('pw-confirm').value = '';
+  } catch (ex) {
+    err.textContent = ex.message; err.style.display = 'block';
+  }
+  setLoading(btn, false, 'Update Password');
+}
+
+loadProfile();
+</script>
+</body>
+</html>
