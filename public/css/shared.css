@@ -213,6 +213,61 @@ textarea.form-input { resize:vertical; min-height:90px; }
 /* ── RESPONSIVE ── */
 @media (max-width:640px) {
   .page { padding:24px 16px; }
-  .nav  { padding:0 16px; }
+  .nav  { padding:0 16px; gap:8px; }
+  .nav-links { display:none; } /* hide nav links on mobile, use dropdown */
   .stream-grid { grid-template-columns:1fr; }
+  .stat-grid { grid-template-columns:repeat(2,1fr); }
+  .modal { padding:20px; border-radius:16px; }
+}
+
+/* ── STREAM PAGE MOBILE FIXES ── */
+@media (max-width:700px) {
+  /* Host controls: scrollable row */
+  .host-controls {
+    overflow-x:auto;
+    flex-wrap:nowrap !important;
+    -webkit-overflow-scrolling:touch;
+    padding:8px 10px !important;
+    gap:6px !important;
+    scrollbar-width:none;
+  }
+  .host-controls::-webkit-scrollbar { display:none; }
+  .ctrl-btn {
+    padding:9px 12px !important;
+    font-size:11px !important;
+    flex-shrink:0;
+    white-space:nowrap;
+  }
+
+  /* Perms bar: scrollable */
+  .perms-bar {
+    overflow-x:auto;
+    flex-wrap:nowrap !important;
+    -webkit-overflow-scrolling:touch;
+    scrollbar-width:none;
+    gap:6px !important;
+  }
+  .perms-bar::-webkit-scrollbar { display:none; }
+  .perm-pill { flex-shrink:0; }
+
+  /* Volume slider: full width below controls */
+  #vol-slider { width:100% !important; }
+
+  /* Topbar: tighter */
+  .topbar { padding:0 10px !important; gap:7px !important; }
+  .topbar-title { max-width:90px !important; font-size:12px; }
+  .topbar-btn { padding:5px 9px !important; font-size:11px !important; }
+
+  /* Cam strip tiles: smaller on mobile */
+  .cam-tile { width:120px !important; height:72px !important; }
+  .cam-strip-wrap.open { max-height:84px !important; }
+
+  /* Sidebar takes full width on mobile when open */
+  .sidebar:not(.closed) {
+    position:fixed;
+    inset:0;
+    z-index:200;
+    width:100% !important;
+  }
+  .sidebar-close-btn { display:flex !important; }
 }

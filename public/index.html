@@ -74,12 +74,24 @@ renderNav('home');
 
 async function load() {
   const q = document.getElementById('q').value.trim();
-  const url = '/streams?limit=24' + (q ? '&q=' + encodeURIComponent(q) : '');
+  let url = '/streams?limit=24';
+  if (q) url += '&q=' + encodeURIComponent(q);
   try {
     const data = await API.get(url);
-    renderLive(data.live || []);
-    renderRecent(data.recent || []);
-    updateStats(data.live || []);
+    const live   = data.live   || [];
+    const recent = data.recent || [];
+    if (filter === 'live') {
+      renderLive(live);
+      document.getElementById('recent-section').style.display = 'none';
+    } else {
+      renderLive(live);
+      renderRecent(recent);
+    }
+    updateStats(live);
+    // Always show stats strip
+    if (live.length > 0 || recent.length > 0) {
+      document.getElementById('stats-strip').style.display = 'flex';
+    }
   } catch (e) {
     document.getElementById('live-grid').innerHTML =
       `<div class="empty"><div class="empty-icon">⚠️</div><div class="empty-txt">Could not load streams</div></div>`;

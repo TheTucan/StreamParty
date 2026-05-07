@@ -16,17 +16,31 @@ const upload = multer({
   fileFilter: (_, file, cb) => cb(null, file.mimetype.startsWith('image/')),
 });
 
+// FIX: Return { live, recent } shape that the frontend index.html expects
 router.get('/', optionalAuth, async (req, res) => {
   try {
-    const { search, live_only, page = 1 } = req.query;
+    const { q, search, page = 1 } = req.query;
+    const searchTerm = q || search;
     const limit = 24; const offset = (Math.max(1,+page)-1)*limit;
     const params = [];
     let where = `s.is_public = 1`;
-    if (live_only === '1') { where += ` AND s.is_live = 1`; }
-    if (search) { where += ` AND (s.title LIKE ? OR u.display_name LIKE ?)`; const q=`%${search}%`; params.push(q,q); }
-    const rows = await db.ex(`SELECT s.id, s.room_code, s.title, s.description, s.is_live, s.viewer_count, s.thumbnail_url, s.started_at, s.source_type, u.display_name AS host_name, u.avatar_color AS host_color FROM streams s JOIN users u ON u.id = s.host_id WHERE ${where} ORDER BY s.is_live DESC, s.viewer_count DESC, s.created_at DESC LIMIT ? OFFSET ?`, [...params, limit, offset]);
-    const [cnt] = await db.q(`SELECT COUNT(*) AS total FROM streams s JOIN users u ON u.id=s.host_id WHERE ${where}`, params);
-    res.json({ streams: rows, total: cnt[0].total, page: +page, limit });
+    if (searchTerm) { where += ` AND (s.title LIKE ? OR u.display_name LIKE ?)`; const sq=`%${searchTerm}%`; params.push(sq,sq); }
+
+    const allRows = await db.ex(
+      `SELECT s.id, s.room_code, s.title, s.description, s.is_live, s.viewer_count,
+              s.thumbnail_url, s.started_at, s.ended_at, s.source_type,
+              u.display_name AS host_name, u.avatar_color AS host_color
+       FROM streams s JOIN users u ON u.id = s.host_id
+       WHERE ${where}
+       ORDER BY s.is_live DESC, s.viewer_count DESC, s.created_at DESC
+       LIMIT ? OFFSET ?`,
+      [...params, limit, offset]
+    );
+
+    const live   = allRows.filter(r => r.is_live);
+    const recent = allRows.filter(r => !r.is_live);
+
+    res.json({ live, recent, total: allRows.length, page: +page, limit });
   } catch (err) { console.error(err); res.status(500).json({ error: 'Server error' }); }
 });
 
@@ -48,7 +62,15 @@ router.get('/:code', optionalAuth, async (req, res) => {
   try {
     const row = await db.one(`SELECT s.*, u.display_name AS host_name, u.avatar_color AS host_color, u.id AS host_user_id FROM streams s JOIN users u ON u.id=s.host_id WHERE s.room_code=?`, [req.params.code.toUpperCase()]);
     if (!row) return res.status(404).json({ error: 'Stream not found' });
+    // Allow host to always see their own private stream
     if (!row.is_public && (!req.user || req.user.id !== row.host_id)) return res.status(403).json({ error: 'Private stream' });
+
+    // Attach recent chat
+    try {
+      const chat = await db.ex(`SELECT cm.display_name, cm.message, cm.created_at AS sent_at FROM chat_messages cm WHERE cm.stream_id=? AND cm.is_deleted=0 ORDER BY cm.created_at DESC LIMIT 50`, [row.id]);
+      row.recent_chat = chat.reverse();
+    } catch { row.recent_chat = []; }
+
     res.json(row);
   } catch { res.status(500).json({ error: 'Server error' }); }
 });
@@ -64,7 +86,7 @@ router.post('/', requireAuth, async (req, res) => {
 
 router.patch('/:code', requireAuth, requireHost, async (req, res) => {
   try {
-    const allowed = ['title','description','is_public','allow_guest_cam','allow_guest_mic','allow_guest_screen','allow_chat','max_guests'];
+    const allowed = ['title','description','is_public','is_live','allow_guest_cam','allow_guest_mic','allow_guest_screen','allow_chat','max_guests'];
     const updates = []; const vals = [];
     for (const k of allowed) { if (req.body[k] !== undefined) { updates.push(`${k}=?`); vals.push(req.body[k]); } }
     if (!updates.length) return res.status(400).json({ error: 'Nothing to update' });
@@ -98,7 +120,7 @@ router.post('/:code/mute', requireAuth, requireHost, async (req, res) => {
   res.json({ ok: true });
 });
 
-router.post('/:code/snapshot', requireAuth, requireHost, upload.single('snapshot'), async (req, res) => {
+router.post('/:code/snapshot', requireAuth, requireHost, upload.single('snap'), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ error: 'No image' });
     const fname = `snap_${req.stream.id}_${Date.now()}.jpg`;
@@ -106,7 +128,7 @@ router.post('/:code/snapshot', requireAuth, requireHost, upload.single('snapshot
     await sharp(req.file.buffer).resize(640, 360, { fit: 'cover' }).jpeg({ quality: 72 }).toFile(fpath);
     const url = `/uploads/${fname}`;
     await db.q(`UPDATE streams SET thumbnail_url=? WHERE id=?`, [url, req.stream.id]);
-    await db.q(`INSERT INTO stream_snapshots (stream_id, filename) VALUES (?,?)`, [req.stream.id, fname]);
+    try { await db.q(`INSERT INTO stream_snapshots (stream_id, filename) VALUES (?,?)`, [req.stream.id, fname]); } catch {}
     const old = await db.ex(`SELECT filename FROM stream_snapshots WHERE stream_id=? ORDER BY taken_at DESC LIMIT 999 OFFSET 10`, [req.stream.id]);
     for (const r of old) { try { fs.unlinkSync(path.join(UPLOAD_DIR, r.filename)); } catch(_) {} await db.q(`DELETE FROM stream_snapshots WHERE stream_id=? AND filename=?`, [req.stream.id, r.filename]); }
     res.json({ ok: true, url });
