@@ -4,6 +4,15 @@ const bcrypt = require('bcrypt');
 const db = require('../db');
 const { requireAuth } = require('../middleware/auth');
 
+// FIX: GET /me was missing — profile page calls this
+router.get('/me', requireAuth, async (req, res) => {
+  try {
+    const user = await db.one(`SELECT id, email, display_name, avatar_color, role, created_at FROM users WHERE id=?`, [req.user.id]);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    res.json(user);
+  } catch { res.status(500).json({ error: 'Server error' }); }
+});
+
 router.get('/:id', async (req, res) => {
   const user = await db.one(`SELECT id, display_name, avatar_color, created_at FROM users WHERE id=? AND is_banned=0`, [req.params.id]);
   if (!user) return res.status(404).json({ error: 'User not found' });
@@ -25,7 +34,8 @@ router.patch('/me', requireAuth, async (req, res) => {
     if (!updates.length) return res.status(400).json({ error: 'Nothing to update' });
     vals.push(req.user.id);
     await db.q(`UPDATE users SET ${updates.join(',')} WHERE id=?`, vals);
-    res.json({ ok: true });
+    const updated = await db.one(`SELECT id, email, display_name, avatar_color, role FROM users WHERE id=?`, [req.user.id]);
+    res.json(updated);
   } catch { res.status(500).json({ error: 'Server error' }); }
 });
 

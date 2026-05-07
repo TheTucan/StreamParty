@@ -1,159 +1,150 @@
 #!/bin/bash
-# ═══════════════════════════════════════════════════════════
-#  StreamParty — Auto Update Script
-#  Run: sudo bash update.sh
-# ═══════════════════════════════════════════════════════════
-
-# ── CONFIG (edit this if your repo URL changes) ──────────────
-REPO_URL="https://github.com/TheTucan/StraemParty"
-APP_DIR="/var/www/streamparty"
-BACKUP_DIR="/var/backups/streamparty"
-TMP_DIR="/tmp/streamparty-update-$$"
-SERVICE="streamparty"
-# ─────────────────────────────────────────────────────────────
-
+# ═══════════════════════════════════════════════════════
+#  StreamParty — Install / Update Script
+#  Works for fresh installs AND updates
+#  Run: curl -fsSL https://raw.githubusercontent.com/TheTucan/StreamParty/main/update.sh | sudo bash
+# ═══════════════════════════════════════════════════════
 set -euo pipefail
 
-# Colors
+REPO="https://github.com/TheTucan/StreamParty"
+APP_DIR="/var/www/streamparty"
+BACKUP_DIR="/var/backups/streamparty"
+TMP="/tmp/sp-update-$$"
+SERVICE="streamparty"
+
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; CYAN='\033[0;36m'; NC='\033[0m'
-info()    { echo -e "${CYAN}[INFO]${NC}  $1"; }
-success() { echo -e "${GREEN}[OK]${NC}    $1"; }
-warn()    { echo -e "${YELLOW}[WARN]${NC}  $1"; }
-error()   { echo -e "${RED}[ERROR]${NC} $1"; exit 1; }
+info()    { echo -e "${CYAN}[INFO]${NC}  $*"; }
+ok()      { echo -e "${GREEN}[ OK ]${NC}  $*"; }
+warn()    { echo -e "${YELLOW}[WARN]${NC}  $*"; }
+die()     { echo -e "${RED}[FAIL]${NC}  $*"; exit 1; }
+
+[[ $EUID -ne 0 ]] && die "Run with sudo"
 
 echo ""
-echo -e "${CYAN}╔═══════════════════════════════════╗${NC}"
-echo -e "${CYAN}║   StreamParty — Auto Updater      ║${NC}"
-echo -e "${CYAN}╚═══════════════════════════════════╝${NC}"
+echo -e "${CYAN}╔══════════════════════════════════════╗${NC}"
+echo -e "${CYAN}║   StreamParty  Install / Update      ║${NC}"
+echo -e "${CYAN}╚══════════════════════════════════════╝${NC}"
 echo ""
 
-# ── Must run as root ─────────────────────────────────────────
-[[ $EUID -ne 0 ]] && error "Run with sudo: sudo bash update.sh"
+# ── Download latest code ─────────────────────────────
+info "Downloading latest from GitHub..."
+mkdir -p "$TMP"
+curl -fsSL -L "${REPO}/archive/refs/heads/main.zip" -o "$TMP/repo.zip" \
+  || die "Download failed. Check internet connection and repo URL: ${REPO}"
 
-# ── Check git is available ───────────────────────────────────
-command -v git &>/dev/null || { info "Installing git..."; apt-get install -y git -qq; }
+unzip -q "$TMP/repo.zip" -d "$TMP/"
+SRC=$(find "$TMP" -maxdepth 1 -mindepth 1 -type d | head -1)
+[[ -d "$SRC/public" && -d "$SRC/server" ]] || die "Bad repo structure — missing public/ or server/"
+ok "Downloaded."
 
-# ── Create backup ────────────────────────────────────────────
-TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-BACKUP_PATH="${BACKUP_DIR}/${TIMESTAMP}"
-info "Backing up current version to ${BACKUP_PATH}..."
-mkdir -p "$BACKUP_DIR"
-cp -r "$APP_DIR" "$BACKUP_PATH"
-success "Backup saved."
-
-# ── Download latest from GitHub ──────────────────────────────
-info "Downloading latest code from ${REPO_URL}..."
-rm -rf "$TMP_DIR"
-mkdir -p "$TMP_DIR"
-
-# Try git clone first, fall back to zip download
-if git clone --depth=1 "$REPO_URL" "$TMP_DIR/repo" 2>/dev/null; then
-  SRC="$TMP_DIR/repo"
-  success "Cloned from git."
+# ── Backup if app already exists ─────────────────────
+if [[ -d "$APP_DIR/server" ]]; then
+  TS=$(date +%Y%m%d_%H%M%S)
+  BPATH="${BACKUP_DIR}/${TS}"
+  info "Backing up current install to ${BPATH}..."
+  mkdir -p "$BACKUP_DIR"
+  cp -r "$APP_DIR" "$BPATH"
+  ok "Backup saved."
+  IS_UPDATE=1
 else
-  # Fallback: download zip
-  warn "git clone failed, trying zip download..."
-  ZIP_URL="${REPO_URL}/archive/refs/heads/main.zip"
-  curl -fsSL "$ZIP_URL" -o "$TMP_DIR/repo.zip" || error "Could not download from ${REPO_URL}. Check the URL."
-  unzip -q "$TMP_DIR/repo.zip" -d "$TMP_DIR/"
-  SRC=$(find "$TMP_DIR" -maxdepth 1 -type d | grep -v "^$TMP_DIR$" | head -1)
-  success "Downloaded zip."
+  IS_UPDATE=0
 fi
 
-# ── Verify the download looks right ──────────────────────────
-[[ -d "$SRC/public" ]] || error "Downloaded repo missing 'public' folder. Check repo URL."
-[[ -d "$SRC/server" ]] || error "Downloaded repo missing 'server' folder. Check repo URL."
-success "Repo structure looks valid."
+# ── Stop service if running ───────────────────────────
+systemctl stop "$SERVICE" 2>/dev/null || true
 
-# ── Stop service ─────────────────────────────────────────────
-info "Stopping ${SERVICE} service..."
-systemctl stop "$SERVICE" || warn "Service was not running."
+# ── Copy files (preserve .env, node_modules, uploads) ─
+info "Copying files..."
+mkdir -p "$APP_DIR/public" "$APP_DIR/server"
 
-# ── Copy new files (preserve .env and uploads) ───────────────
-info "Applying updates..."
-
-# Public files (HTML, CSS, JS)
 rsync -a --delete \
   --exclude='uploads/' \
   "$SRC/public/" "$APP_DIR/public/"
 
-# Server files (routes, middleware, etc)
-# But DO NOT overwrite .env or node_modules
 rsync -a \
   --exclude='node_modules/' \
   --exclude='.env' \
   "$SRC/server/" "$APP_DIR/server/"
 
-# Copy root-level config files if they exist in repo
-for f in nginx.conf streamparty.service; do
-  [[ -f "$SRC/$f" ]] && cp "$SRC/$f" "$APP_DIR/$f" && info "Updated $f"
-done
+ok "Files updated."
 
-success "Files updated."
-
-# ── Install any new npm dependencies ─────────────────────────
-info "Checking for new npm dependencies..."
+# ── Install/update npm dependencies ──────────────────
+info "Installing npm dependencies..."
 cd "$APP_DIR/server"
-if npm install --omit=dev --silent 2>/dev/null; then
-  success "npm dependencies up to date."
-else
-  warn "npm install had warnings (non-fatal)."
+npm install --omit=dev --silent 2>/dev/null || npm install --omit=dev
+ok "Dependencies ready."
+
+# ── First-time setup only ─────────────────────────────
+if [[ $IS_UPDATE -eq 0 ]]; then
+  info "First-time setup — running full installer..."
+  # Check if install.sh exists and run it instead
+  if [[ -f "$SRC/install.sh" ]]; then
+    bash "$SRC/install.sh"
+    rm -rf "$TMP"
+    exit 0
+  fi
 fi
 
-# ── Reload nginx config if it changed ────────────────────────
+# ── Reload nginx ──────────────────────────────────────
 if nginx -t 2>/dev/null; then
-  systemctl reload nginx && success "NGINX reloaded."
+  systemctl reload nginx && ok "NGINX reloaded."
 else
-  warn "NGINX config test failed — skipping reload. Check nginx.conf manually."
+  warn "NGINX config test failed — check manually."
 fi
 
-# ── Start service ─────────────────────────────────────────────
-info "Starting ${SERVICE} service..."
+# ── Start service ─────────────────────────────────────
+info "Starting StreamParty service..."
 systemctl start "$SERVICE"
 sleep 2
 
-# ── Health check ─────────────────────────────────────────────
-info "Running health check..."
 if systemctl is-active --quiet "$SERVICE"; then
-  success "Service is running."
+  ok "Service running."
 else
-  error "Service failed to start! Check logs: journalctl -u ${SERVICE} -n 30"
+  echo ""
+  echo "Service failed to start. Last 20 log lines:"
+  journalctl -u "$SERVICE" -n 20 --no-pager
+  die "Fix errors above then run: sudo systemctl start $SERVICE"
 fi
 
-# Quick API ping
-if curl -sf http://127.0.0.1:3001/api/streams/stats &>/dev/null; then
-  success "API is responding."
+# ── Health check ──────────────────────────────────────
+sleep 1
+if curl -sf http://127.0.0.1:3001/api/health &>/dev/null; then
+  ok "API responding."
 else
-  warn "API health check failed — service may still be starting up. Check: journalctl -u ${SERVICE} -f"
+  warn "API not responding yet — may still be starting."
 fi
 
-# ── Cleanup ──────────────────────────────────────────────────
-rm -rf "$TMP_DIR"
-
-# ── Remove old backups (keep last 5) ─────────────────────────
-BACKUP_COUNT=$(ls -1 "$BACKUP_DIR" | wc -l)
-if [[ $BACKUP_COUNT -gt 5 ]]; then
-  info "Pruning old backups (keeping 5 most recent)..."
-  ls -1t "$BACKUP_DIR" | tail -n +6 | xargs -I{} rm -rf "${BACKUP_DIR}/{}"
+# ── Prune old backups (keep 5) ────────────────────────
+if [[ -d "$BACKUP_DIR" ]]; then
+  COUNT=$(ls -1 "$BACKUP_DIR" | wc -l)
+  if [[ $COUNT -gt 5 ]]; then
+    ls -1t "$BACKUP_DIR" | tail -n +6 | xargs -I{} rm -rf "${BACKUP_DIR}/{}"
+    info "Old backups pruned."
+  fi
 fi
 
+rm -rf "$TMP"
+
 echo ""
-echo -e "${GREEN}╔═══════════════════════════════════╗${NC}"
-echo -e "${GREEN}║   Update complete! ✓               ║${NC}"
-echo -e "${GREEN}╚═══════════════════════════════════╝${NC}"
+echo -e "${GREEN}╔══════════════════════════════════════╗${NC}"
+echo -e "${GREEN}║   Update complete! ✓                  ║${NC}"
+echo -e "${GREEN}╚══════════════════════════════════════╝${NC}"
 echo ""
-echo -e "  Backup saved at: ${YELLOW}${BACKUP_PATH}${NC}"
-echo -e "  Rollback with:   ${YELLOW}sudo bash update.sh --rollback${NC}"
+echo -e "  Site:     ${CYAN}https://watch.relay.media${NC}"
+echo -e "  Logs:     ${YELLOW}journalctl -u streamparty -f${NC}"
+echo -e "  Rollback: ${YELLOW}sudo bash update.sh --rollback${NC}"
 echo ""
 
-# ── Rollback support ─────────────────────────────────────────
+# ── Rollback flag ─────────────────────────────────────
 if [[ "${1:-}" == "--rollback" ]]; then
-  LATEST_BACKUP=$(ls -1t "$BACKUP_DIR" | head -1)
-  [[ -z "$LATEST_BACKUP" ]] && error "No backups found in $BACKUP_DIR"
-  info "Rolling back to ${LATEST_BACKUP}..."
+  LATEST=$(ls -1t "$BACKUP_DIR" 2>/dev/null | head -1)
+  [[ -z "$LATEST" ]] && die "No backups found in $BACKUP_DIR"
+  info "Rolling back to $LATEST..."
   systemctl stop "$SERVICE" || true
-  rsync -a --delete --exclude='.env' --exclude='node_modules/' --exclude='uploads/' \
-    "${BACKUP_DIR}/${LATEST_BACKUP}/" "$APP_DIR/"
+  rsync -a --delete \
+    --exclude='.env' --exclude='node_modules/' --exclude='uploads/' \
+    "${BACKUP_DIR}/${LATEST}/" "$APP_DIR/"
+  cd "$APP_DIR/server" && npm install --omit=dev --silent
   systemctl start "$SERVICE"
-  success "Rolled back to ${LATEST_BACKUP}."
+  ok "Rolled back to $LATEST"
 fi
